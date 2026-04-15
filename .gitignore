@@ -1,0 +1,12 @@
+node_modules/
+output/
+projects/
+.claude/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+.DS_Store
+Thumbs.db

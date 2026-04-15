@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>FlowCap</title>
+  <link rel="stylesheet" href="./index.css">
+</head>
+<body>
+  <div class="title-bar">
+    <div class="title-text">FlowCap · Studio Quality</div>
+    <button class="close-window-btn" id="closeWindowBtn">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 6L6 18M6 6l12 12"></path>
+      </svg>
+    </button>
+  </div>
+
+  <div class="layout">
+    <div class="panel sidebar">
+      <h2>Project Setup</h2>
+
+      <div class="form-group">
+        <label>Target URL or File</label>
+        <div style="display:flex; gap: 8px;">
+          <input type="text" id="projectUrl" placeholder="http://localhost:3000 or file path" style="flex:1;" />
+          <button id="selectHtmlBtn" style="padding: 4px 8px;">Browse</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Flow File</label>
+        <div style="display:flex; gap: 8px;">
+          <button id="selectFlowBtn" style="padding: 4px 8px; flex: 1;">Load Flow JSON</button>
+        </div>
+        <div id="flowPathDisplay" style="font-size: 10px; color: var(--text-muted); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; margin-top: 4px;"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Duration (s)</label>
+        <input type="number" id="durationSec" value="15" />
+      </div>
+
+      <div class="form-group row-group">
+        <label>Background Color</label>
+        <input type="color" id="bgColor" value="#ff00ff" />
+      </div>
+
+      <div class="form-group row-group">
+        <label>Background Image</label>
+        <div style="display:flex; gap: 8px;">
+          <button id="selectImageBtn" style="padding: 4px 8px; flex: 1;">Choose Image</button>
+          <button id="clearImageBtn" style="padding: 4px 8px;" hidden>X</button>
+        </div>
+        <div id="imagePathDisplay" style="font-size: 10px; color: var(--text-muted); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; margin-top: 4px;"></div>
+      </div>
+
+      <div class="form-group row-group" style="margin-top: 15px;">
+        <label>Video Corner Radius</label>
+        <div style="display:flex; gap: 10px; align-items:center;">
+          <input type="range" id="borderRadius" min="0" max="100" value="24" style="width: 80px;" oninput="document.getElementById('radiusVal').innerText = this.value + 'px'" />
+          <span id="radiusVal" style="font-size: 12px; color: var(--text-muted); width: 30px;">24px</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Cursor</label>
+        <label class="inline-toggle">
+          <input type="checkbox" id="showCursor" checked />
+          <span>Show showcase cursor</span>
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label>Cursor Style</label>
+        <select id="cursorStyle">
+          <option value="dot">Dot</option>
+          <option value="arrow">Arrow</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="inline-toggle">
+          <input type="checkbox" id="adaptiveCursorTiming" />
+          <span>Adapt cursor timing to video duration</span>
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label>Mockup</label>
+        <select id="mockupType">
+          <option value="none">None</option>
+          <option value="browser">Browser</option>
+          <option value="phone">Phone</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Camera Zoom (%)</label>
+        <input type="number" id="zoomPercent" value="0" min="0" max="100" step="1" />
+        <div class="field-help">Whole-shot zoom. For UI-only focus, use content zoom steps in Flow Steps.</div>
+      </div>
+
+      <div class="form-group">
+        <label>Output Quality</label>
+        <select id="outputQuality">
+          <option value="standard">Standard</option>
+          <option value="high">High</option>
+          <option value="ultra">Ultra</option>
+        </select>
+        <div class="field-help">Higher quality uses a slower export and larger file size.</div>
+      </div>
+
+      <div class="form-group row-group" style="margin-top: 15px;">
+        <label>Browser Viewport Size</label>
+        <div style="display:flex; gap: 8px; align-items: center;">
+          <input type="number" id="browserW" value="1280" style="flex:1;" title="Width" />
+          <span>x</span>
+          <input type="number" id="browserH" value="800" style="flex:1;" title="Height" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Video Placement</label>
+        <select id="videoAlign" style="margin-bottom: 8px;">
+          <option value="center">Center</option>
+          <option value="bottom-right">Bottom Right</option>
+          <option value="top-left">Top Left</option>
+          <option value="custom">Custom (Top-Left Anchored)</option>
+        </select>
+        <div style="display:flex; gap: 8px; align-items: center;">
+          <div style="display:flex; flex-direction:column; flex:1;">
+            <label style="font-size:10px;">Offset X (px)</label>
+            <input type="number" id="offsetX" value="0" />
+          </div>
+          <div style="display:flex; flex-direction:column; flex:1;">
+            <label style="font-size:10px;">Offset Y (px)</label>
+            <input type="number" id="offsetY" value="0" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel center-panel">
+      <div class="tabs">
+        <button class="tab active" id="tabFlow">Flow Steps</button>
+        <button class="tab" id="tabPreview">Motion</button>
+      </div>
+
+      <div id="flowView">
+        <div class="actions">
+          <button id="addStepBtn">+ Add Step</button>
+          <button id="addContentZoomBtn">+ Content Zoom</button>
+          <button id="addZoomOutBtn">+ Zoom Out</button>
+        </div>
+        <div class="selector-catalog-section">
+          <div class="selector-catalog-header">
+            <h3>Detected Targets</h3>
+            <div class="selector-catalog-help">Choose a detected CSS selector or add it directly to the flow.</div>
+          </div>
+          <div id="selectorCatalog" class="selector-catalog-empty">
+            Analyze a URL or file to detect clickable and typeable targets.
+          </div>
+        </div>
+        <div id="stepsList" class="steps-list"></div>
+      </div>
+
+      <div id="previewView" hidden>
+        <div class="preview-stage-wrapper">
+          <div class="preview-stage" id="previewStage">
+            <div class="preview-bg" id="previewBg"></div>
+            <div class="preview-composite" id="previewComposite">
+              <div class="preview-mockup" id="previewMockup" hidden></div>
+              <div class="preview-window" id="previewWindow">
+                <div class="preview-content" id="previewContent">
+                  <img class="preview-snapshot" id="previewSnapshot" alt="Preview snapshot" hidden />
+                  <iframe
+                    class="preview-frame"
+                    id="previewFrame"
+                    title="Motion Preview"
+                    loading="eager"
+                    referrerpolicy="no-referrer"
+                  ></iframe>
+                </div>
+              </div>
+              <div class="preview-cursor" id="previewCursor" hidden></div>
+            </div>
+          </div>
+        </div>
+        <div class="motion-panel">
+          <div class="motion-toolbar">
+            <div>
+              <div class="motion-title">Motion Keyframes</div>
+              <div class="motion-help">Drag in the preview to place the selected keyframe visually.</div>
+            </div>
+            <div class="motion-toolbar-actions">
+              <select id="motionNewScope">
+                <option value="content">Content</option>
+                <option value="device">Device</option>
+              </select>
+              <button id="addMotionKeyframeBtn">+ Add Keyframe</button>
+              <button id="deleteMotionKeyframeBtn">Delete</button>
+            </div>
+          </div>
+          <div class="motion-timeline-panel">
+            <div class="motion-time-row">
+              <input type="range" id="motionTimeline" min="0" max="15000" step="10" value="0" />
+              <div class="motion-time-label" id="motionTimeLabel">0.00s</div>
+            </div>
+            <div class="motion-markers" id="motionKeyframeMarkers"></div>
+          </div>
+          <div class="motion-inspector" id="motionInspector">
+            <div class="motion-empty">Add a keyframe to start visual motion editing.</div>
+          </div>
+        </div>
+        <div class="preview-info">1920 × 1080 · H.264 · 60fps</div>
+      </div>
+    </div>
+
+    <div class="panel right-panel">
+      <h2>Recording</h2>
+      <div class="record-container">
+        <button id="recordBtn" class="record-btn">
+          <span class="icon">●</span> Start Recording
+        </button>
+      </div>
+
+      <div class="status-container">
+        <h3>Status Log</h3>
+        <div id="statusLog" class="status-log">Ready...</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./app.mjs"></script>
+</body>
+</html>

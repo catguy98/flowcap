@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flow Connect - Registration</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-elements">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+    </div>
+
+    <div class="container">
+        <!-- Sidebar context info to make it look premium -->
+        <div class="sidebar">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M2 17L12 22L22 17" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M2 12L12 17L22 12" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>Nexus</span>
+            </div>
+            
+            <div class="progress-indicator">
+                <div class="step-indicator active" id="indicator-1">
+                    <div class="ring"><div class="dot"></div></div>
+                    <span>Account Details</span>
+                </div>
+                <div class="step-indicator" id="indicator-2">
+                    <div class="ring"><div class="dot"></div></div>
+                    <span>Location Info</span>
+                </div>
+                <div class="step-indicator" id="indicator-3">
+                    <div class="ring"><div class="dot"></div></div>
+                    <span>Verification</span>
+                </div>
+                <div class="line"></div>
+            </div>
+        </div>
+
+        <!-- Form Area -->
+        <div class="form-container">
+            <div class="form-slider" id="form-slider">
+                
+                <!-- Step 1: Email & Password -->
+                <div class="step step-1 active" id="step-1">
+                    <h2>Create your account</h2>
+                    <p class="subtitle">Join the next generation of cloud infrastructure.</p>
+                    
+                    <div class="input-group">
+                        <label for="email">Work Email</label>
+                        <input type="email" id="email" placeholder="name@company.com" autocomplete="off">
+                    </div>
+                    
+                    <div class="input-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" placeholder="••••••••" autocomplete="off">
+                    </div>
+
+                    <button class="primary-btn" onclick="nextStep(2)" id="btn-1">
+                        Continue
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Step 2: Address -->
+                <div class="step step-2" id="step-2">
+                    <h2>Where are you based?</h2>
+                    <p class="subtitle">To optimize your server edge locations.</p>
+                    
+                    <div class="input-group">
+                        <label for="country">Country</label>
+                        <select id="country">
+                            <option value="">Select country...</option>
+                            <option value="us">United States</option>
+                            <option value="uk">United Kingdom</option>
+                            <option value="ca">Canada</option>
+                        </select>
+                    </div>
+
+                    <div class="input-row">
+                        <div class="input-group">
+                            <label for="state">State</label>
+                            <input type="text" id="state" placeholder="e.g. CA">
+                        </div>
+                        <div class="input-group">
+                            <label for="city">City</label>
+                            <input type="text" id="city" placeholder="e.g. San Francisco">
+                        </div>
+                    </div>
+
+                    <div class="btn-group">
+                        <button class="secondary-btn" onclick="prevStep(1)">Back</button>
+                        <button class="primary-btn" onclick="nextStep(3)" id="btn-2">
+                            Continue
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M5 12h14M12 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 3: OTP -->
+                <div class="step step-3" id="step-3">
+                    <h2>Verify your email</h2>
+                    <p class="subtitle">We've sent a 4-digit code to your email.</p>
+                    
+                    <div class="otp-container">
+                        <input type="text" maxlength="1" class="otp-input" id="otp-1" autofocus>
+                        <input type="text" maxlength="1" class="otp-input" id="otp-2">
+                        <input type="text" maxlength="1" class="otp-input" id="otp-3">
+                        <input type="text" maxlength="1" class="otp-input" id="otp-4">
+                    </div>
+
+                    <div class="btn-group">
+                        <button class="secondary-btn" onclick="prevStep(2)">Back</button>
+                        <button class="primary-btn success" onclick="completeRegistration()" id="btn-3">
+                            Verify & Complete
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Success State -->
+                <div class="step step-success" id="step-4">
+                    <div class="success-icon">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2">
+                            <path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <h2>Welcome to Nexus</h2>
+                    <p class="subtitle">Your account is ready.</p>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
