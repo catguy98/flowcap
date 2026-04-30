@@ -1,4 +1,11 @@
-export function createStepRenderer({ elements, state, appendLog }) {
+export function createStepRenderer({ elements, state, appendLog, onChange }) {
+  function notifyChange({ rerender = false } = {}) {
+    if (rerender) {
+      renderSteps()
+    }
+    onChange?.()
+  }
+
   function renderSelectorCatalog() {
     const { selectorCatalogEl } = elements
     selectorCatalogEl.innerHTML = ''
@@ -44,7 +51,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
         target.isNavigation ? 'navigation' : '',
       ]
         .filter(Boolean)
-        .join(' • ')
+        .join(' · ')
 
       const code = document.createElement('code')
       code.className = 'selector-card-code'
@@ -97,7 +104,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
                 targetLabel: target.label,
               },
         )
-        renderSteps()
+        notifyChange({ rerender: true })
       }
 
       const copyBtn = document.createElement('button')
@@ -118,7 +125,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
             selector: selectedSelector,
             targetLabel: target.label,
           })
-          renderSteps()
+          notifyChange({ rerender: true })
         }
         actions.appendChild(hoverBtn)
       }
@@ -145,7 +152,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
     input.value = step.selector || ''
     input.onchange = (event) => {
       state.currentSteps[index].selector = event.target.value
-      renderSteps()
+      notifyChange({ rerender: true })
     }
 
     row.appendChild(input)
@@ -185,7 +192,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
         )
         state.currentSteps[index].selector = event.target.value
         state.currentSteps[index].targetLabel = selectedTarget?.label || ''
-        renderSteps()
+        notifyChange({ rerender: true })
       }
 
       row.appendChild(picker)
@@ -232,7 +239,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
 
       typeSelect.onchange = (event) => {
         state.currentSteps[index].action = event.target.value
-        renderSteps()
+        notifyChange({ rerender: true })
       }
 
       const paramsDiv = document.createElement('div')
@@ -247,6 +254,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
         input.value = step.ms || 1000
         input.onchange = (event) => {
           state.currentSteps[index].ms = event.target.value
+          notifyChange()
         }
         row.appendChild(input)
         paramsDiv.appendChild(row)
@@ -271,6 +279,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
         })
         stateInput.onchange = (event) => {
           state.currentSteps[index].state = event.target.value
+          notifyChange()
         }
 
         const timeout = document.createElement('input')
@@ -282,6 +291,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
         timeout.style.flexShrink = '0'
         timeout.onchange = (event) => {
           state.currentSteps[index].timeout = parseInt(event.target.value, 10) || 5000
+          notifyChange()
         }
 
         row.appendChild(stateInput)
@@ -315,6 +325,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
         text.value = step.text || ''
         text.onchange = (event) => {
           state.currentSteps[index].text = event.target.value
+          notifyChange()
         }
 
         const delay = document.createElement('input')
@@ -327,6 +338,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
         delay.style.flexShrink = '0'
         delay.onchange = (event) => {
           state.currentSteps[index].delay = parseInt(event.target.value, 10) || 0
+          notifyChange()
         }
 
         row.appendChild(text)
@@ -356,6 +368,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
           state.currentSteps[index].percent = parseInt(event.target.value, 10) || 0
           state.currentSteps[index].action = 'content_zoom'
           delete state.currentSteps[index].level
+          notifyChange()
         }
 
         const duration = document.createElement('input')
@@ -371,6 +384,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
             state.currentSteps[index].action = 'content_zoom'
             delete state.currentSteps[index].level
           }
+          notifyChange()
         }
 
         row.appendChild(percent)
@@ -386,6 +400,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
         duration.value = step.duration || 380
         duration.onchange = (event) => {
           state.currentSteps[index].duration = parseInt(event.target.value, 10) || 380
+          notifyChange()
         }
         row.appendChild(duration)
         paramsDiv.appendChild(row)
@@ -398,6 +413,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
         input.value = step.y || 400
         input.onchange = (event) => {
           state.currentSteps[index].y = event.target.value
+          notifyChange()
         }
         row.appendChild(input)
         paramsDiv.appendChild(row)
@@ -407,7 +423,7 @@ export function createStepRenderer({ elements, state, appendLog }) {
       removeBtn.innerText = 'X'
       removeBtn.onclick = () => {
         state.currentSteps.splice(index, 1)
-        renderSteps()
+        notifyChange({ rerender: true })
       }
 
       el.appendChild(typeSelect)

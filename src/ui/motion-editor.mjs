@@ -6,8 +6,32 @@ function createId() {
   return `kf_${Math.random().toString(36).slice(2, 8)}`
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 function formatTime(ms) {
   return `${(ms / 1000).toFixed(2)}s`
+}
+
+function scaleToZoomPercent(scale) {
+  return Math.max(Math.round((scale - 1) * 100), 0)
+}
+
+function zoomPercentToScale(percent) {
+  return 1 + clamp(percent, 0, 60) / 100
+}
+
+function getAvailableTargets(state) {
+  return Array.isArray(state.motion.bridgeTargets) ? state.motion.bridgeTargets : []
+}
+
+function getTargetById(state, targetId) {
+  return getAvailableTargets(state).find((target) => target.id === targetId) || null
 }
 
 function ensureDurationMs(state, elements) {
@@ -53,11 +77,28 @@ function interpolateTrack(keyframes, scope, currentTimeMs) {
   return { ...base, ...track[track.length - 1] }
 }
 
+function findNearestTrackKeyframe(keyframes, scope, currentTimeMs) {
+  const track = sortKeyframes(
+    keyframes.filter((keyframe) => keyframe.scope === scope),
+  )
+
+  let nearest = null
+  for (const keyframe of track) {
+    if (keyframe.timeMs <= currentTimeMs) {
+      nearest = keyframe
+      continue
+    }
+    break
+  }
+
+  return nearest
+}
+
 function findKeyframe(state) {
   return state.motion.keyframes.find((keyframe) => keyframe.id === state.motion.selectedKeyframeId)
 }
 
-function renderInspector(elements, state, onChange) {
+function renderInspector(elements, state, handlers) {
   const inspector = elements.motionInspectorEl
   const selected = findKeyframe(state)
 
@@ -81,8 +122,12 @@ function renderInspector(elements, state, onChange) {
         </select>
       </label>
       <label class="motion-field">
-        <span>Scale (%)</span>
-        <input type="range" id="motionFieldScale" min="80" max="160" step="1" />
+        <span>Zoom (%)</span>
+        <input type="range" id="motionFieldScale" min="0" max="60" step="1" />
+      </label>
+      <label class="motion-field">
+        <span>Target</span>
+        <select id="motionFieldTarget"></select>
       </label>
       <label class="motion-field">
         <span>X (px)</span>
@@ -99,49 +144,89 @@ function renderInspector(elements, state, onChange) {
   const timeInput = inspector.querySelector('#motionFieldTime')
   const scopeInput = inspector.querySelector('#motionFieldScope')
   const scaleInput = inspector.querySelector('#motionFieldScale')
+  const targetInput = inspector.querySelector('#motionFieldTarget')
   const xInput = inspector.querySelector('#motionFieldX')
   const yInput = inspector.querySelector('#motionFieldY')
   const scaleReadout = inspector.querySelector('#motionFieldScaleReadout')
   const durationMs = ensureDurationMs(state, elements)
+  const zoomPercent = scaleToZoomPercent(selected.scale)
+  const targets = getAvailableTargets(state)
 
   timeInput.max = String(durationMs)
   timeInput.value = String(selected.timeMs)
   scopeInput.value = selected.scope
-  scaleInput.value = String(Math.round(selected.scale * 100))
+  scaleInput.value = String(zoomPercent)
+  targetInput.innerHTML = [
+    '<option value="">Manual framing</option>',
+    ...targets.map(
+      (target) =>
+        `<option value="${escapeHtml(target.id)}">${escapeHtml(target.label)}</option>`,
+    ),
+  ].join('')
+  targetInput.value = selected.targetId || ''
   xInput.value = String(selected.x)
   yInput.value = String(selected.y)
-  scaleReadout.textContent = `${Math.round(selected.scale * 100)}%`
+  scaleReadout.textContent = `${zoomPercent}%`
 
   timeInput.oninput = (event) => {
     selected.timeMs = clamp(parseInt(event.target.value, 10) || 0, 0, durationMs)
     state.motion.currentTimeMs = selected.timeMs
     elements.motionTimelineInput.value = String(selected.timeMs)
-    onChange()
+    handlers.rerender()
   }
 
   scopeInput.onchange = (event) => {
     selected.scope = event.target.value
-    onChange()
+    handlers.rerender()
   }
 
   scaleInput.oninput = (event) => {
-    selected.scale = clamp((parseInt(event.target.value, 10) || 100) / 100, 0.8, 1.6)
-    scaleReadout.textContent = `${Math.round(selected.scale * 100)}%`
-    onChange()
+    const nextZoomPercent = parseInt(event.target.value, 10) || 0
+    selected.scale = zoomPercentToScale(nextZoomPercent)
+    scaleReadout.textContent = `${nextZoomPercent}%`
+    handlers.syncPreviewOnly()
+  }
+
+  scaleInput.onchange = () => {
+    handlers.commitPreviewChange()
+  }
+
+  targetInput.onchange = (event) => {
+    selected.targetId = event.target.value || ''
+    selected.targetLabel = getTargetById(state, selected.targetId)?.label || ''
+    if (selected.targetId) {
+      selected.x = 0
+      selected.y = 0
+    }
+    xInput.value = String(selected.x)
+    yInput.value = String(selected.y)
+    handlers.commitPreviewChange()
+  }
+
+  timeInput.onchange = () => {
+    handlers.commitPreviewChange()
   }
 
   xInput.oninput = (event) => {
     selected.x = parseInt(event.target.value, 10) || 0
-    onChange()
+    handlers.syncPreviewOnly()
+  }
+
+  xInput.onchange = () => {
+    handlers.commitPreviewChange()
   }
 
   yInput.oninput = (event) => {
     selected.y = parseInt(event.target.value, 10) || 0
-    onChange()
+    handlers.syncPreviewOnly()
+  }
+
+  yInput.onchange = () => {
+    handlers.commitPreviewChange()
   }
 }
 
-function renderMarkers(elements, state, onChange) {
+function renderMarkers(elements, state, onChange, onTimeChange, onScrub, onInteractionStart) {
   const markersEl = elements.motionMarkersEl
   markersEl.innerHTML = ''
   const durationMs = ensureDurationMs(state, elements)
@@ -153,13 +238,69 @@ function renderMarkers(elements, state, onChange) {
     marker.style.left = `${(keyframe.timeMs / durationMs) * 100}%`
     marker.textContent = keyframe.scope === 'device' ? 'D' : 'C'
     marker.title = `${keyframe.scope} · ${formatTime(keyframe.timeMs)}`
+
     marker.onclick = () => {
+      if (marker.dataset.dragged === 'true') {
+        marker.dataset.dragged = 'false'
+        return
+      }
       state.motion.selectedKeyframeId = keyframe.id
       state.motion.currentTimeMs = keyframe.timeMs
       elements.motionTimelineInput.value = String(keyframe.timeMs)
       onChange()
       onTimeChange?.()
     }
+
+    marker.onpointerdown = (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      onInteractionStart?.()
+
+      state.motion.selectedKeyframeId = keyframe.id
+      const markerId = keyframe.id
+      const trackRect = elements.motionTimelineInput.getBoundingClientRect()
+      let didDrag = false
+
+      marker.dataset.dragged = 'false'
+      marker.setPointerCapture?.(event.pointerId)
+
+      function updateFromClientX(clientX) {
+        const ratio = clamp((clientX - trackRect.left) / Math.max(trackRect.width, 1), 0, 1)
+        const nextTimeMs = Math.round((ratio * durationMs) / 10) * 10
+
+        keyframe.timeMs = nextTimeMs
+        state.motion.currentTimeMs = nextTimeMs
+        elements.motionTimelineInput.value = String(nextTimeMs)
+        elements.motionTimeLabelEl.textContent = formatTime(nextTimeMs)
+        marker.style.left = `${(nextTimeMs / durationMs) * 100}%`
+        marker.title = `${keyframe.scope} · ${formatTime(nextTimeMs)}`
+        onScrub?.()
+      }
+
+      updateFromClientX(event.clientX)
+
+      function handleMove(moveEvent) {
+        didDrag = true
+        marker.dataset.dragged = 'true'
+        updateFromClientX(moveEvent.clientX)
+      }
+
+      function handleUp(pointerEvent) {
+        window.removeEventListener('pointermove', handleMove)
+        window.removeEventListener('pointerup', handleUp)
+        marker.releasePointerCapture?.(pointerEvent.pointerId)
+        state.motion.selectedKeyframeId = markerId
+        if (didDrag) {
+          onChange()
+          return
+        }
+        marker.dataset.dragged = 'false'
+      }
+
+      window.addEventListener('pointermove', handleMove)
+      window.addEventListener('pointerup', handleUp)
+    }
+
     markersEl.appendChild(marker)
   })
 }
@@ -177,7 +318,8 @@ function bindPreviewDragging(elements, state, onChange) {
     const stageRect = elements.previewStageEl.getBoundingClientRect()
     const contentRect = elements.previewWindowEl.getBoundingClientRect()
     const stageScale = 1920 / Math.max(stageRect.width, 1)
-    const contentScale = (parseInt(elements.browserWInput.value, 10) || 1280) / Math.max(contentRect.width, 1)
+    const contentScale =
+      (parseInt(elements.browserWInput.value, 10) || 1280) / Math.max(contentRect.width, 1)
 
     activeDrag = {
       startX: event.clientX,
@@ -215,27 +357,79 @@ function bindPreviewDragging(elements, state, onChange) {
 }
 
 export function createMotionEditor({ elements, state, updatePreview, onTimeChange }) {
-  function rerender() {
+  const interactionHooks = {
+    onTimelineInteraction: null,
+  }
+
+  function syncPreviewOnly() {
+    updatePreview()
+  }
+
+  function commitPreviewChange() {
+    updatePreview()
+    onTimeChange?.()
+  }
+
+  function rerender(options = {}) {
     const durationMs = ensureDurationMs(state, elements)
     elements.motionTimelineInput.max = String(durationMs)
     elements.motionTimelineInput.value = String(
       clamp(state.motion.currentTimeMs, 0, durationMs),
     )
     elements.motionTimeLabelEl.textContent = formatTime(state.motion.currentTimeMs)
-    renderMarkers(elements, state, rerender)
-    renderInspector(elements, state, rerender)
+    renderMarkers(
+      elements,
+      state,
+      rerender,
+      onTimeChange,
+      syncPreviewOnly,
+      () => interactionHooks.onTimelineInteraction?.(),
+    )
+    renderInspector(elements, state, {
+      rerender,
+      syncPreviewOnly,
+      commitPreviewChange,
+    })
     updatePreview()
+    if (!options.skipTimeCallback) {
+      onTimeChange?.()
+    }
   }
 
   elements.motionTimelineInput.addEventListener('input', (event) => {
-    state.motion.currentTimeMs = clamp(parseInt(event.target.value, 10) || 0, 0, ensureDurationMs(state, elements))
+    interactionHooks.onTimelineInteraction?.()
+    state.motion.currentTimeMs = clamp(
+      parseInt(event.target.value, 10) || 0,
+      0,
+      ensureDurationMs(state, elements),
+    )
     rerender()
-    onTimeChange?.()
   })
+
+  elements.motionTimelineInput.addEventListener('pointerdown', () => {
+    interactionHooks.onTimelineInteraction?.()
+  })
+
+  elements.motionTimelineInput.addEventListener('mousedown', () => {
+    interactionHooks.onTimelineInteraction?.()
+  })
+
+  elements.motionTimelineInput.addEventListener(
+    'touchstart',
+    () => {
+      interactionHooks.onTimelineInteraction?.()
+    },
+    { passive: true },
+  )
 
   elements.addMotionKeyframeBtn.addEventListener('click', () => {
     const scope = elements.motionNewScopeInput.value || 'content'
     const current = interpolateTrack(state.motion.keyframes, scope, state.motion.currentTimeMs)
+    const sourceTargetKeyframe = findNearestTrackKeyframe(
+      state.motion.keyframes,
+      scope,
+      state.motion.currentTimeMs,
+    )
     const keyframe = {
       id: createId(),
       timeMs: state.motion.currentTimeMs,
@@ -243,6 +437,8 @@ export function createMotionEditor({ elements, state, updatePreview, onTimeChang
       x: Math.round(current.x),
       y: Math.round(current.y),
       scale: Number(current.scale.toFixed(3)),
+      targetId: sourceTargetKeyframe?.targetId || '',
+      targetLabel: sourceTargetKeyframe?.targetLabel || '',
     }
     state.motion.keyframes.push(keyframe)
     state.motion.selectedKeyframeId = keyframe.id
@@ -262,6 +458,9 @@ export function createMotionEditor({ elements, state, updatePreview, onTimeChang
 
   return {
     rerender,
+    setInteractionHooks(hooks = {}) {
+      interactionHooks.onTimelineInteraction = hooks.onTimelineInteraction || null
+    },
     getMotionStateAtCurrentTime() {
       return {
         content: interpolateTrack(state.motion.keyframes, 'content', state.motion.currentTimeMs),

@@ -1,7 +1,9 @@
+import { deriveMotionFromSteps, getFlowDurationMs } from './core/flow-timing.mjs'
+import { createLivePreviewController } from './runtime/live-preview.mjs'
 import { elements } from './ui/elements.mjs'
+import { createMotionEditor } from './ui/motion-editor.mjs'
 import { createPreviewRenderer } from './ui/preview.mjs'
 import { createStepRenderer } from './ui/steps.mjs'
-import { createMotionEditor } from './ui/motion-editor.mjs'
 
 const state = {
   currentSteps: [],
@@ -11,6 +13,7 @@ const state = {
     keyframes: [],
     currentTimeMs: 0,
     selectedKeyframeId: null,
+    bridgeTargets: [],
   },
   preview: {
     snapshotDataUrl: null,
@@ -21,114 +24,97 @@ const state = {
 }
 
 const updatePreview = createPreviewRenderer(elements, state)
+let motionEditor = null
+let livePreview = null
 
-function appendLog(msg) {
-  const div = document.createElement('div')
-  div.innerText = `> ${msg}`
-  elements.statusLog.appendChild(div)
-  elements.statusLog.scrollTop = elements.statusLog.scrollHeight
-}
+function buildPreviewFrameUrl(targetUrl, forceReload = false) {
+  if (!forceReload) return targetUrl
 
-function estimateStepDuration(step) {
-  switch (step.action) {
-    case 'wait':
-      return parseInt(step.ms, 10) || 0
-    case 'wait_for':
-      return 180
-    case 'hover':
-      return 260
-    case 'click':
-      return 220
-    case 'scroll':
-      return 240
-    case 'type': {
-      const textLength = (step.text || '').length
-      const delay = parseInt(step.delay, 10) || 0
-      return textLength * Math.max(delay, 14) + 160
-    }
-    default:
-      return 140
+  try {
+    const url = new URL(targetUrl)
+    url.searchParams.set('__flowcap_preview_ts', String(Date.now()))
+    return url.toString()
+  } catch {
+    const separator = targetUrl.includes('?') ? '&' : '?'
+    return `${targetUrl}${separator}__flowcap_preview_ts=${Date.now()}`
   }
 }
 
-function deriveMotionFromSteps(steps) {
-  let currentTimeMs = 0
-  let currentScale = 1
-  const keyframes = []
-  const filteredSteps = []
+function normalizeStepsForMotion(steps, hasExplicitMotion) {
+  if (!Array.isArray(steps)) return []
+  if (!hasExplicitMotion) return steps
 
-  for (const step of steps) {
+  return steps.map((step) => {
     if (step.action === 'content_zoom' || step.action === 'zoom') {
-      const duration = parseInt(step.duration, 10) || 420
-      const percent =
-        step.action === 'zoom'
-          ? Math.max((Number.parseFloat(step.level) - 1) * 100, 0)
-          : Number.parseFloat(step.percent) || 0
-      const nextScale = 1 + percent / 100
-      keyframes.push({
-        id: `kf_${Math.random().toString(36).slice(2, 8)}`,
-        timeMs: currentTimeMs,
-        scope: 'content',
-        x: 0,
-        y: 0,
-        scale: Number(currentScale.toFixed(3)),
-      })
-      currentTimeMs += duration
-      currentScale = nextScale
-      keyframes.push({
-        id: `kf_${Math.random().toString(36).slice(2, 8)}`,
-        timeMs: currentTimeMs,
-        scope: 'content',
-        x: 0,
-        y: 0,
-        scale: Number(currentScale.toFixed(3)),
-      })
-      continue
+      return {
+        action: 'wait',
+        ms: parseInt(step.duration, 10) || 420,
+      }
     }
 
     if (step.action === 'zoom_out') {
-      const duration = parseInt(step.duration, 10) || 380
-      keyframes.push({
-        id: `kf_${Math.random().toString(36).slice(2, 8)}`,
-        timeMs: currentTimeMs,
-        scope: 'content',
-        x: 0,
-        y: 0,
-        scale: Number(currentScale.toFixed(3)),
-      })
-      currentTimeMs += duration
-      currentScale = 1
-      keyframes.push({
-        id: `kf_${Math.random().toString(36).slice(2, 8)}`,
-        timeMs: currentTimeMs,
-        scope: 'content',
-        x: 0,
-        y: 0,
-        scale: 1,
-      })
-      continue
+      return {
+        action: 'wait',
+        ms: parseInt(step.duration, 10) || 380,
+      }
     }
 
-    filteredSteps.push(step)
-    currentTimeMs += estimateStepDuration(step)
-  }
-
-  return {
-    keyframes,
-    filteredSteps,
-  }
+    return step
+  })
 }
 
-const { renderSelectorCatalog, renderSteps } = createStepRenderer({
-  elements,
-  state,
-  appendLog,
+function ensurePreviewFrame(forceReload = false, onReady = null) {
+  const targetUrl = elements.projectUrlInput.value.trim()
+  if (!targetUrl) {
+    appendLog('Preview frame skipped -> no project URL')
+    return
+  }
+
+  const loadedUrl = elements.previewFrameEl.dataset.loadedUrl || ''
+  const currentSrc = elements.previewFrameEl.getAttribute('src') || ''
+  const nextSrc = buildPreviewFrameUrl(targetUrl, forceReload)
+
+  if (!forceReload && loadedUrl === targetUrl && currentSrc === nextSrc) {
+    appendLog(`Preview frame reused -> ${targetUrl}`)
+    onReady?.()
+    return
+  }
+
+  if (!forceReload) {
+    appendLog(`Preview frame src -> ${nextSrc}`)
+    elements.previewFrameEl.src = nextSrc
+    elements.previewFrameEl.dataset.loadedUrl = targetUrl
+    livePreview?.connect()
+    onReady?.()
+    return
+  }
+
+  appendLog(`Preview frame reload -> ${nextSrc}`)
+  elements.previewFrameEl.src = nextSrc
+  elements.previewFrameEl.dataset.loadedUrl = targetUrl
+  livePreview?.connect()
+  onReady?.()
+}
+
+function appendLog(message) {
+  const entry = document.createElement('div')
+  entry.innerText = `> ${message}`
+  elements.statusLog.appendChild(entry)
+  elements.statusLog.scrollTop = elements.statusLog.scrollHeight
+}
+
+appendLog('Renderer booted -> FlowCap debug logging active')
+
+window.addEventListener('error', (event) => {
+  appendLog(`Renderer error: ${event.message}`)
 })
-const motionEditor = createMotionEditor({
-  elements,
-  state,
-  updatePreview,
-  onTimeChange: requestPreviewSnapshot,
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason =
+    typeof event.reason === 'string'
+      ? event.reason
+      : event.reason?.message || 'Unknown rejection'
+  appendLog(`Renderer rejection: ${reason}`)
 })
 
 function clearPreviewCache() {
@@ -147,6 +133,8 @@ function getPreviewCacheKey() {
 }
 
 function requestPreviewSnapshot() {
+  if (livePreview?.isReady()) return
+
   if (state.preview.debounceId) {
     window.clearTimeout(state.preview.debounceId)
   }
@@ -158,11 +146,13 @@ function requestPreviewSnapshot() {
     const cacheKey = getPreviewCacheKey()
     const cached = state.preview.cache.get(cacheKey)
     if (cached) {
+      appendLog(`Preview fallback cache -> ${(state.motion.currentTimeMs / 1000).toFixed(2)}s`)
       state.preview.snapshotDataUrl = cached
       updatePreview()
       return
     }
 
+    appendLog(`Preview fallback render -> ${(state.motion.currentTimeMs / 1000).toFixed(2)}s`)
     const token = ++state.preview.requestToken
     const result = await window.api.renderPreviewState({
       url,
@@ -174,11 +164,33 @@ function requestPreviewSnapshot() {
       },
     })
 
-    if (token !== state.preview.requestToken || !result?.success) return
+    if (livePreview?.isReady()) return
+    if (token !== state.preview.requestToken) return
+    if (!result?.success) {
+      appendLog(`Preview fallback failed: ${result?.error || 'unknown error'}`)
+      return
+    }
     state.preview.cache.set(cacheKey, result.dataUrl)
     state.preview.snapshotDataUrl = result.dataUrl
     updatePreview()
-  }, 180)
+    appendLog(`Preview fallback ready -> ${(state.motion.currentTimeMs / 1000).toFixed(2)}s`)
+  }, 70)
+}
+
+function syncPreviewRuntime({ force = false } = {}) {
+  ensurePreviewFrame(false)
+  updatePreview()
+
+  if (elements.previewView.hidden) return
+
+  if (livePreview?.isReady()) {
+    state.preview.snapshotDataUrl = null
+    updatePreview()
+    livePreview.seekCurrentTime({ force })
+    return
+  }
+
+  requestPreviewSnapshot()
 }
 
 async function analyzeAndPopulateSteps(url, options = {}) {
@@ -192,6 +204,7 @@ async function analyzeAndPopulateSteps(url, options = {}) {
   const result = await window.api.analyzeUrl(url)
   state.detectedTargets =
     result.success && Array.isArray(result.targets) ? result.targets : []
+
   if (!preserveSteps) {
     const nextSteps =
       result.success && Array.isArray(result.steps) && result.steps.length > 0
@@ -205,11 +218,11 @@ async function analyzeAndPopulateSteps(url, options = {}) {
     elements.motionTimelineInput.value = '0'
   }
 
-  renderSelectorCatalog()
-  renderSteps()
-  motionEditor.rerender()
+  stepRenderer.renderSelectorCatalog()
+  stepRenderer.renderSteps()
+  motionEditor.rerender({ skipTimeCallback: true })
   clearPreviewCache()
-  requestPreviewSnapshot()
+  syncPreviewRuntime({ force: true })
 
   if (!result.success) {
     appendLog(`Analyze failed: ${result.error}`)
@@ -226,6 +239,18 @@ function applyFlowDefinition(flowDefinition) {
 
   if (flow.durationSec !== undefined) {
     elements.durationSecInput.value = String(flow.durationSec)
+  }
+
+  if (flow.render?.mode || flow.renderMode) {
+    elements.renderModeInput.value = flow.render?.mode || flow.renderMode
+  }
+
+  if (flow.render?.fps || flow.studioFps) {
+    elements.studioFpsInput.value = String(flow.render?.fps || flow.studioFps)
+  }
+
+  if (flow.render?.motionBlur !== undefined) {
+    elements.motionBlurInput.value = String(flow.render.motionBlur)
   }
 
   if (flow.bgColor) {
@@ -245,8 +270,8 @@ function applyFlowDefinition(flowDefinition) {
     elements.cursorStyleInput.value = flow.cursor.style
   }
 
-  if (flow.cursor?.adaptiveTiming !== undefined) {
-    elements.adaptiveCursorTimingInput.checked = Boolean(flow.cursor.adaptiveTiming)
+  if (flow.interaction?.disableHoverMotion !== undefined) {
+    elements.disableHoverMotionInput.checked = Boolean(flow.interaction.disableHoverMotion)
   }
 
   if (flow.mockup?.type) {
@@ -255,6 +280,12 @@ function applyFlowDefinition(flowDefinition) {
 
   if (flow.zoomPercent !== undefined) {
     elements.zoomPercentInput.value = String(flow.zoomPercent)
+  }
+
+  if (flow.cameraZoomDurationMs !== undefined) {
+    elements.cameraZoomDurationInput.value = String(flow.cameraZoomDurationMs)
+  } else if (flow.camera?.durationMs !== undefined) {
+    elements.cameraZoomDurationInput.value = String(flow.camera.durationMs)
   }
 
   if (flow.quality) {
@@ -267,6 +298,10 @@ function applyFlowDefinition(flowDefinition) {
 
   if (flow.browserConfig?.height !== undefined) {
     elements.browserHInput.value = String(flow.browserConfig.height)
+  }
+
+  if (flow.browserConfig?.captureScale !== undefined) {
+    elements.captureScaleInput.value = String(flow.browserConfig.captureScale)
   }
 
   if (flow.placement?.align) {
@@ -285,7 +320,9 @@ function applyFlowDefinition(flowDefinition) {
   const explicitMotion = Array.isArray(flow.motion?.keyframes) ? flow.motion.keyframes : null
   const derivedMotion = explicitMotion ? null : deriveMotionFromSteps(explicitSteps)
 
-  state.currentSteps = derivedMotion ? derivedMotion.filteredSteps : explicitSteps
+  state.currentSteps = derivedMotion
+    ? derivedMotion.filteredSteps
+    : normalizeStepsForMotion(explicitSteps, Boolean(explicitMotion))
   state.motion.keyframes = (explicitMotion || derivedMotion?.keyframes || []).map((keyframe) => ({
     id: keyframe.id || `kf_${Math.random().toString(36).slice(2, 8)}`,
     timeMs: parseInt(keyframe.timeMs, 10) || 0,
@@ -293,15 +330,16 @@ function applyFlowDefinition(flowDefinition) {
     x: parseInt(keyframe.x, 10) || 0,
     y: parseInt(keyframe.y, 10) || 0,
     scale: Number.parseFloat(keyframe.scale) || 1,
+    targetId: keyframe.targetId || '',
+    targetLabel: keyframe.targetLabel || '',
   }))
   state.motion.selectedKeyframeId = state.motion.keyframes[0]?.id || null
   state.motion.currentTimeMs = 0
   elements.motionTimelineInput.value = '0'
-  renderSteps()
-  motionEditor.rerender()
+  stepRenderer.renderSteps()
+  motionEditor.rerender({ skipTimeCallback: true })
   clearPreviewCache()
-  updatePreview()
-  requestPreviewSnapshot()
+  syncPreviewRuntime({ force: true })
 
   if (flow.url) {
     analyzeAndPopulateSteps(flow.url, { preserveSteps: true })
@@ -322,11 +360,24 @@ async function start() {
   const bgColor = elements.bgColorInput.value
   const borderRadius = elements.borderRadiusInput.value
   const zoomPercent = Number.parseFloat(elements.zoomPercentInput.value) || 0
+  const flowDurationMs = getFlowDurationMs(state.currentSteps, durationSec)
+  const suggestedCameraZoomDurationMs = Math.min(
+    Math.max(Math.round(flowDurationMs * 0.18), 650),
+    1400,
+  )
+  const requestedCameraZoomDurationMs =
+    parseInt(elements.cameraZoomDurationInput.value, 10) || 0
   const quality = elements.outputQualityInput.value || 'standard'
+  const render = {
+    mode: elements.renderModeInput.value || 'realtime',
+    fps: parseInt(elements.studioFpsInput.value, 10) || 60,
+    motionBlur: parseInt(elements.motionBlurInput.value, 10) || 0,
+  }
 
   const browserConfig = {
     width: parseInt(elements.browserWInput.value, 10) || 1280,
     height: parseInt(elements.browserHInput.value, 10) || 800,
+    captureScale: Number.parseFloat(elements.captureScaleInput.value) || 1,
   }
 
   const placement = {
@@ -335,10 +386,20 @@ async function start() {
     y: parseInt(elements.offsetYInput.value, 10) || 0,
   }
 
+  const camera = {
+    zoomDurationMs:
+      requestedCameraZoomDurationMs > 0
+        ? requestedCameraZoomDurationMs
+        : suggestedCameraZoomDurationMs,
+  }
+
   const cursor = {
     enabled: elements.showCursorInput.checked,
     style: elements.cursorStyleInput.value || 'dot',
-    adaptiveTiming: elements.adaptiveCursorTimingInput.checked,
+  }
+
+  const interaction = {
+    disableHoverMotion: elements.disableHoverMotionInput.checked,
   }
 
   const mockup = {
@@ -363,11 +424,14 @@ async function start() {
     bgImagePath: state.selectedBgImagePath,
     borderRadius,
     zoomPercent,
+    camera,
     quality,
     browserConfig,
     placement,
     cursor,
+    interaction,
     mockup,
+    render,
     motion: {
       keyframes: state.motion.keyframes.map((keyframe) => ({
         id: keyframe.id,
@@ -376,6 +440,8 @@ async function start() {
         x: keyframe.x,
         y: keyframe.y,
         scale: keyframe.scale,
+        targetId: keyframe.targetId || '',
+        targetLabel: keyframe.targetLabel || '',
       })),
     },
   })
@@ -383,7 +449,15 @@ async function start() {
   window.api.removeProgressListener()
 
   if (result.success) {
-    appendLog(`Success! Video saved at:\n${result.outputPath}`)
+    const entry = document.createElement('div')
+    const link = document.createElement('a')
+    link.textContent = result.outputPath
+    link.style.cssText = 'color:#7dd3fc;text-decoration:underline;cursor:pointer;word-break:break-all;'
+    link.addEventListener('click', () => window.api.openFile(result.outputPath))
+    entry.appendChild(document.createTextNode('> Success! Video saved at: '))
+    entry.appendChild(link)
+    elements.statusLog.appendChild(entry)
+    elements.statusLog.scrollTop = elements.statusLog.scrollHeight
   } else {
     appendLog(`Error: ${result.error}`)
   }
@@ -391,6 +465,49 @@ async function start() {
   elements.recordBtn.disabled = false
   elements.recordBtn.innerHTML = '<span class="icon">●</span> Start Recording'
 }
+
+const stepRenderer = createStepRenderer({
+  elements,
+  state,
+  appendLog,
+  onChange: () => {
+    clearPreviewCache()
+    syncPreviewRuntime({ force: true })
+  },
+})
+
+motionEditor = createMotionEditor({
+  elements,
+  state,
+  updatePreview,
+  onTimeChange: () => {
+    syncPreviewRuntime({ force: true })
+  },
+})
+
+livePreview = createLivePreviewController({
+  elements,
+  state,
+  updatePreview,
+  rerenderMotion: motionEditor.rerender,
+  getMotionState: motionEditor.getMotionStateAtCurrentTime,
+  onTimeCommitted: () => {},
+  appendLog,
+  onBridgeReady: () => {
+    state.preview.snapshotDataUrl = null
+    updatePreview()
+  },
+  onTargetsChange: () => {
+    motionEditor.rerender({ skipTimeCallback: true })
+  },
+})
+
+livePreview.bind()
+motionEditor.setInteractionHooks({
+  onTimelineInteraction: () => {
+    livePreview.pause()
+  },
+})
 
 elements.selectHtmlBtn.addEventListener('click', async () => {
   const filePath = await window.api.selectHtmlFile()
@@ -415,8 +532,9 @@ elements.projectUrlInput.addEventListener('blur', () => {
   const url = elements.projectUrlInput.value.trim()
   if (url) analyzeAndPopulateSteps(url)
   clearPreviewCache()
-  updatePreview()
-  requestPreviewSnapshot()
+  ensurePreviewFrame(true, () => {
+    syncPreviewRuntime({ force: true })
+  })
 })
 
 elements.selectImageBtn.addEventListener('click', async () => {
@@ -427,7 +545,7 @@ elements.selectImageBtn.addEventListener('click', async () => {
   elements.imagePathDisplay.innerText = imagePath
   elements.imagePathDisplay.title = imagePath
   elements.clearImageBtn.hidden = false
-  updatePreview()
+  syncPreviewRuntime()
 })
 
 elements.clearImageBtn.addEventListener('click', () => {
@@ -435,17 +553,24 @@ elements.clearImageBtn.addEventListener('click', () => {
   elements.imagePathDisplay.innerText = ''
   elements.imagePathDisplay.title = ''
   elements.clearImageBtn.hidden = true
-  updatePreview()
+  syncPreviewRuntime()
 })
 
 elements.closeBtn.addEventListener('click', () => {
   window.api.closeWindow()
 })
+elements.minimizeBtn?.addEventListener('click', () => {
+  window.api.minimizeWindow()
+})
+elements.toggleMaximizeBtn?.addEventListener('click', () => {
+  window.api.toggleMaximizeWindow()
+})
 
 elements.addStepBtn.addEventListener('click', () => {
   state.currentSteps.push({ action: 'wait', ms: 1000 })
-  renderSteps()
+  stepRenderer.renderSteps()
   clearPreviewCache()
+  syncPreviewRuntime({ force: true })
 })
 
 elements.addContentZoomBtn.addEventListener('click', () => {
@@ -455,8 +580,9 @@ elements.addContentZoomBtn.addEventListener('click', () => {
     percent: 12,
     duration: 420,
   })
-  renderSteps()
+  stepRenderer.renderSteps()
   clearPreviewCache()
+  syncPreviewRuntime({ force: true })
 })
 
 elements.addZoomOutBtn.addEventListener('click', () => {
@@ -464,13 +590,15 @@ elements.addZoomOutBtn.addEventListener('click', () => {
     action: 'zoom_out',
     duration: 380,
   })
-  renderSteps()
+  stepRenderer.renderSteps()
   clearPreviewCache()
+  syncPreviewRuntime({ force: true })
 })
 
 elements.recordBtn.addEventListener('click', start)
 
 elements.tabFlow.addEventListener('click', () => {
+  livePreview.pause()
   elements.tabFlow.classList.add('active')
   elements.tabPreview.classList.remove('active')
   elements.flowView.hidden = false
@@ -478,13 +606,16 @@ elements.tabFlow.addEventListener('click', () => {
 })
 
 elements.tabPreview.addEventListener('click', () => {
+  appendLog('Motion tab opened')
   elements.tabPreview.classList.add('active')
   elements.tabFlow.classList.remove('active')
   elements.previewView.hidden = false
   elements.flowView.hidden = true
-  motionEditor.rerender()
+  motionEditor.rerender({ skipTimeCallback: true })
   updatePreview()
-  requestPreviewSnapshot()
+  ensurePreviewFrame(true, () => {
+    syncPreviewRuntime({ force: true })
+  })
 })
 
 ;[
@@ -494,17 +625,30 @@ elements.tabPreview.addEventListener('click', () => {
   elements.offsetYInput,
   elements.borderRadiusInput,
   elements.zoomPercentInput,
-].forEach((input) => input.addEventListener('input', updatePreview))
-elements.videoAlignInput.addEventListener('change', updatePreview)
-elements.bgColorInput.addEventListener('input', updatePreview)
-elements.showCursorInput.addEventListener('change', updatePreview)
-elements.cursorStyleInput.addEventListener('change', updatePreview)
-elements.adaptiveCursorTimingInput.addEventListener('change', updatePreview)
-elements.mockupTypeInput.addEventListener('change', updatePreview)
-elements.outputQualityInput.addEventListener('change', updatePreview)
-elements.durationSecInput.addEventListener('input', motionEditor.rerender)
+  elements.cameraZoomDurationInput,
+  elements.captureScaleInput,
+].forEach((input) =>
+  input.addEventListener('input', () => {
+    syncPreviewRuntime()
+  }),
+)
+elements.videoAlignInput.addEventListener('change', () => syncPreviewRuntime())
+elements.bgColorInput.addEventListener('input', () => syncPreviewRuntime())
+elements.showCursorInput.addEventListener('change', () => syncPreviewRuntime())
+elements.cursorStyleInput.addEventListener('change', () => syncPreviewRuntime())
+elements.adaptiveCursorTimingInput.addEventListener('change', () => syncPreviewRuntime())
+elements.disableHoverMotionInput.addEventListener('change', () => syncPreviewRuntime())
+elements.mockupTypeInput.addEventListener('change', () => syncPreviewRuntime())
+elements.outputQualityInput.addEventListener('change', () => syncPreviewRuntime())
+elements.renderModeInput.addEventListener('change', () => syncPreviewRuntime())
+elements.studioFpsInput.addEventListener('change', () => syncPreviewRuntime())
+elements.motionBlurInput.addEventListener('change', () => syncPreviewRuntime())
+elements.durationSecInput.addEventListener('input', () => {
+  motionEditor.rerender({ skipTimeCallback: true })
+  syncPreviewRuntime({ force: true })
+})
 
-renderSelectorCatalog()
-renderSteps()
-motionEditor.rerender()
+stepRenderer.renderSelectorCatalog()
+stepRenderer.renderSteps()
+motionEditor.rerender({ skipTimeCallback: true })
 updatePreview()

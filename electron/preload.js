@@ -11,5 +11,8 @@ contextBridge.exposeInMainWorld('api', {
   onProgress: (callback) => ipcRenderer.on('recording-progress', (event, msg) => callback(msg)),
   removeProgressListener: () => ipcRenderer.removeAllListeners('recording-progress'),
   closeWindow: () => ipcRenderer.send('close-window'),
-  analyzeUrl: (url) => ipcRenderer.invoke('analyze-url', { url })
+  minimizeWindow: () => ipcRenderer.send('minimize-window'),
+  toggleMaximizeWindow: () => ipcRenderer.send('toggle-maximize-window'),
+  analyzeUrl: (url) => ipcRenderer.invoke('analyze-url', { url }),
+  openFile: (filePath) => ipcRenderer.invoke('open-file', filePath)
 });

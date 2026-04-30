@@ -8,11 +8,23 @@
 <body>
   <div class="title-bar">
     <div class="title-text">FlowCap · Studio Quality</div>
-    <button class="close-window-btn" id="closeWindowBtn">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M18 6L6 18M6 6l12 12"></path>
-      </svg>
-    </button>
+    <div class="window-controls">
+      <button class="window-control-btn" id="minimizeWindowBtn" aria-label="Minimize window">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M5 12h14"></path>
+        </svg>
+      </button>
+      <button class="window-control-btn" id="toggleMaximizeWindowBtn" aria-label="Maximize or restore window">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M7 7h10v10H7z"></path>
+        </svg>
+      </button>
+      <button class="close-window-btn" id="closeWindowBtn" aria-label="Close window">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 6L6 18M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
   </div>
 
   <div class="layout">
@@ -38,6 +50,36 @@
       <div class="form-group">
         <label>Duration (s)</label>
         <input type="number" id="durationSec" value="15" />
+      </div>
+
+      <div class="form-group">
+        <label>Render Mode</label>
+        <select id="renderMode">
+          <option value="realtime">Realtime Preview Export</option>
+          <option value="studio">Studio Frame Render</option>
+        </select>
+        <div class="field-help">Studio renders PNG frames first for cleaner final quality. It is slower but better for publishing.</div>
+      </div>
+
+      <div class="form-group">
+        <label>Studio FPS</label>
+        <select id="studioFps">
+          <option value="90">90 FPS</option>
+          <option value="60">60 FPS</option>
+          <option value="30">30 FPS</option>
+          <option value="24">24 FPS</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Motion Blur</label>
+        <select id="motionBlur">
+          <option value="0">Off</option>
+          <option value="1" selected>Subtle (3-frame blend)</option>
+          <option value="2">Moderate (5-frame blend)</option>
+          <option value="3">Strong (7-frame blend)</option>
+        </select>
+        <div class="field-help">Blends neighboring frames to simulate natural motion blur. Makes cursor movement and animations smoother.</div>
       </div>
 
       <div class="form-group row-group">
@@ -80,8 +122,8 @@
 
       <div class="form-group">
         <label class="inline-toggle">
-          <input type="checkbox" id="adaptiveCursorTiming" />
-          <span>Adapt cursor timing to video duration</span>
+          <input type="checkbox" id="disableHoverMotion" />
+          <span>Disable hover motion in recording</span>
         </label>
       </div>
 
@@ -101,6 +143,12 @@
       </div>
 
       <div class="form-group">
+        <label>Camera Zoom Duration (ms)</label>
+        <input type="number" id="cameraZoomDuration" value="0" min="0" step="10" />
+        <div class="field-help">`0` uses a suggested cinematic duration based on the flow. Camera zoom now eases in, then holds.</div>
+      </div>
+
+      <div class="form-group">
         <label>Output Quality</label>
         <select id="outputQuality">
           <option value="standard">Standard</option>
@@ -117,6 +165,16 @@
           <span>x</span>
           <input type="number" id="browserH" value="800" style="flex:1;" title="Height" />
         </div>
+      </div>
+
+      <div class="form-group">
+        <label>Capture Scale</label>
+        <select id="captureScale">
+          <option value="1">1x</option>
+          <option value="1.5">1.5x</option>
+          <option value="2">2x</option>
+        </select>
+        <div class="field-help">Records extra source pixels, then downscales for sharper text/UI.</div>
       </div>
 
       <div class="form-group">
@@ -180,6 +238,9 @@
                     loading="eager"
                     referrerpolicy="no-referrer"
                   ></iframe>
+                  <div class="preview-target-highlight" id="previewTargetHighlight" hidden>
+                    <div class="preview-target-label" id="previewTargetLabel"></div>
+                  </div>
                 </div>
               </div>
               <div class="preview-cursor" id="previewCursor" hidden></div>
@@ -193,6 +254,9 @@
               <div class="motion-help">Drag in the preview to place the selected keyframe visually.</div>
             </div>
             <div class="motion-toolbar-actions">
+              <span class="motion-bridge-status" id="motionBridgeStatus">Bridge: waiting</span>
+              <button id="motionPlayPauseBtn">Play</button>
+              <button id="motionResetBtn">Reset</button>
               <select id="motionNewScope">
                 <option value="content">Content</option>
                 <option value="device">Device</option>

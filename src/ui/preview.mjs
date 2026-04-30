@@ -1,3 +1,7 @@
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max)
+}
+
 function resolvePlacement(width, height, align, offsetX, offsetY) {
   if (align === 'center') {
     return {
@@ -105,6 +109,167 @@ function renderPreviewMockup(elements, spec, url) {
   previewMockupEl.innerHTML = ''
 }
 
+function getSelectedTargetRect(state) {
+  const selectedKeyframeId = state.motion?.selectedKeyframeId
+  if (!selectedKeyframeId) return null
+
+  const selectedKeyframe = state.motion.keyframes.find(
+    (keyframe) => keyframe.id === selectedKeyframeId,
+  )
+  if (!selectedKeyframe?.targetId) return null
+
+  const target = (state.motion.bridgeTargets || []).find(
+    (bridgeTarget) => bridgeTarget.id === selectedKeyframe.targetId,
+  )
+
+  if (!target?.rect) return null
+
+  return {
+    label: target.label,
+    rect: target.rect,
+  }
+}
+
+function easeInOutCubic(ratio) {
+  if (ratio < 0.5) {
+    return 4 * ratio * ratio * ratio
+  }
+
+  return 1 - Math.pow(-2 * ratio + 2, 3) / 2
+}
+
+function easeCinematic(ratio) {
+  if (ratio < 0.5) {
+    return 16 * ratio * ratio * ratio * ratio * ratio
+  }
+
+  return 1 - Math.pow(-2 * ratio + 2, 5) / 2
+}
+
+function getBridgeTarget(state, targetId) {
+  if (!targetId) return null
+  return (state.motion.bridgeTargets || []).find((target) => target.id === targetId) || null
+}
+
+function resolveKeyframeMotion({
+  keyframe,
+  state,
+  scope,
+  browserW,
+  browserH,
+  placement,
+  mockupSpec,
+}) {
+  const zoomFactor = clamp(((Number.parseFloat(keyframe?.scale) || 1) - 1) / 0.6, 0, 1)
+  const base = {
+    x: parseInt(keyframe?.x, 10) || 0,
+    y: parseInt(keyframe?.y, 10) || 0,
+    scale: Number.parseFloat(keyframe?.scale) || 1,
+  }
+
+  if (!keyframe?.targetId) return base
+
+  const target = getBridgeTarget(state, keyframe.targetId)
+  if (!target?.rect) return base
+
+  const viewportW = scope === 'device' ? 1920 : browserW
+  const viewportH = scope === 'device' ? 1080 : browserH
+  const targetWidth = target.rect.width * browserW
+  const targetHeight = target.rect.height * browserH
+  const targetCenterX = (target.rect.x + target.rect.width / 2) * browserW
+  const targetCenterY = (target.rect.y + target.rect.height / 2) * browserH
+  const paddedTargetWidth = targetWidth + viewportW * (0.22 - zoomFactor * 0.1)
+  const paddedTargetHeight = targetHeight + viewportH * (0.22 - zoomFactor * 0.1)
+  const fitScale = Math.min(
+    viewportW / Math.max(paddedTargetWidth, 1),
+    viewportH / Math.max(paddedTargetHeight, 1),
+  )
+  const resolvedScale = Math.max(
+    1,
+    1 + (Math.max(fitScale, 1) - 1) * easeCinematic(zoomFactor),
+  )
+
+  if (scope === 'device') {
+    const screenOffsetX = mockupSpec?.screenX || 0
+    const screenOffsetY = mockupSpec?.screenY || 0
+    const targetShotX = placement.x + screenOffsetX + targetCenterX
+    const targetShotY = placement.y + screenOffsetY + targetCenterY
+    const centerX = 1920 / 2
+    const centerY = 1080 / 2
+
+    return {
+      x: Math.round((centerX - targetShotX) * resolvedScale + base.x),
+      y: Math.round((centerY - targetShotY) * resolvedScale + base.y),
+      scale: resolvedScale,
+    }
+  }
+
+  return {
+    x: Math.round(((browserW / 2) - targetCenterX) * resolvedScale + base.x),
+    y: Math.round(((browserH / 2) - targetCenterY) * resolvedScale + base.y),
+    scale: resolvedScale,
+  }
+}
+
+function interpolateResolvedTrack({
+  keyframes,
+  scope,
+  currentTimeMs,
+  state,
+  browserW,
+  browserH,
+  placement,
+  mockupSpec,
+}) {
+  const track = [...(keyframes || [])]
+    .filter((keyframe) => keyframe.scope === scope)
+    .sort((a, b) => a.timeMs - b.timeMs)
+
+  const base = { x: 0, y: 0, scale: 1 }
+  if (track.length === 0) return base
+
+  const resolve = (keyframe) =>
+    resolveKeyframeMotion({
+      keyframe,
+      state,
+      scope,
+      browserW,
+      browserH,
+      placement,
+      mockupSpec,
+    })
+
+  if (currentTimeMs <= track[0].timeMs) {
+    if (track[0].timeMs <= 0) return resolve(track[0])
+    const ratio = easeCinematic(clamp(currentTimeMs / Math.max(track[0].timeMs, 1), 0, 1))
+    const right = resolve(track[0])
+    return {
+      x: base.x + (right.x - base.x) * ratio,
+      y: base.y + (right.y - base.y) * ratio,
+      scale: base.scale + (right.scale - base.scale) * ratio,
+    }
+  }
+
+  for (let index = 0; index < track.length - 1; index += 1) {
+    const left = track[index]
+    const right = track[index + 1]
+    if (currentTimeMs >= left.timeMs && currentTimeMs <= right.timeMs) {
+      const span = Math.max(right.timeMs - left.timeMs, 1)
+      const ratio = easeCinematic(clamp((currentTimeMs - left.timeMs) / span, 0, 1))
+      const leftResolved = resolve(left)
+      const rightResolved = resolve(right)
+      return {
+        x: leftResolved.x + (rightResolved.x - leftResolved.x) * ratio,
+        y: leftResolved.y + (rightResolved.y - leftResolved.y) * ratio,
+        scale:
+          leftResolved.scale + (rightResolved.scale - leftResolved.scale) * ratio,
+      }
+    }
+  }
+
+  return resolve(track[track.length - 1])
+}
+
 export function createPreviewRenderer(elements, state) {
   return function updatePreview() {
     const browserW = parseInt(elements.browserWInput.value, 10) || 1280
@@ -127,53 +292,31 @@ export function createPreviewRenderer(elements, state) {
     const placement = resolvePlacement(frameWidth, frameHeight, align, offsetX, offsetY)
     const durationMs = Math.max((parseInt(elements.durationSecInput.value, 10) || 15) * 1000, 1000)
     const scaleToContainer = (value) => `${((value / 1920) * 100).toFixed(4)}cqw`
+    const isLiveBridgeReady = elements.previewStageEl.dataset.liveBridgeReady === 'true'
+    const isViewportPreview =
+      isLiveBridgeReady && (elements.mockupTypeInput.value || 'none') === 'none'
 
-    function interpolateTrack(scope) {
-      const track = [...(state.motion?.keyframes || [])]
-        .filter((keyframe) => keyframe.scope === scope)
-        .sort((a, b) => a.timeMs - b.timeMs)
-
-      const base = { x: 0, y: 0, scale: 1 }
-      const currentTimeMs = Math.min(state.motion?.currentTimeMs || 0, durationMs)
-      if (track.length === 0) return base
-
-      if (currentTimeMs <= track[0].timeMs) {
-        if (track[0].timeMs <= 0) return { ...base, ...track[0] }
-        const ratio = currentTimeMs / Math.max(track[0].timeMs, 1)
-        return {
-          x: base.x + (track[0].x - base.x) * ratio,
-          y: base.y + (track[0].y - base.y) * ratio,
-          scale: base.scale + (track[0].scale - base.scale) * ratio,
-        }
-      }
-
-      for (let index = 0; index < track.length - 1; index += 1) {
-        const left = track[index]
-        const right = track[index + 1]
-        if (currentTimeMs >= left.timeMs && currentTimeMs <= right.timeMs) {
-          const ratio = (currentTimeMs - left.timeMs) / Math.max(right.timeMs - left.timeMs, 1)
-          return {
-            x: left.x + (right.x - left.x) * ratio,
-            y: left.y + (right.y - left.y) * ratio,
-            scale: left.scale + (right.scale - left.scale) * ratio,
-          }
-        }
-      }
-
-      return { ...base, ...track[track.length - 1] }
-    }
-
-    const deviceMotion = interpolateTrack('device')
-    const contentMotion = interpolateTrack('content')
-
-    const targetUrl = elements.projectUrlInput.value.trim()
-    if (targetUrl) {
-      const loadedUrl = elements.previewFrameEl.dataset.loadedUrl || ''
-      if (loadedUrl !== targetUrl) {
-        elements.previewFrameEl.src = targetUrl
-        elements.previewFrameEl.dataset.loadedUrl = targetUrl
-      }
-    }
+    const currentTimeMs = Math.min(state.motion?.currentTimeMs || 0, durationMs)
+    const deviceMotion = interpolateResolvedTrack({
+      keyframes: state.motion?.keyframes || [],
+      scope: 'device',
+      currentTimeMs,
+      state,
+      browserW,
+      browserH,
+      placement,
+      mockupSpec,
+    })
+    const contentMotion = interpolateResolvedTrack({
+      keyframes: state.motion?.keyframes || [],
+      scope: 'content',
+      currentTimeMs,
+      state,
+      browserW,
+      browserH,
+      placement,
+      mockupSpec,
+    })
 
     if (state.preview?.snapshotDataUrl) {
       elements.previewSnapshotEl.hidden = false
@@ -185,18 +328,35 @@ export function createPreviewRenderer(elements, state) {
       elements.previewSnapshotEl.removeAttribute('src')
     }
 
-    elements.previewCompositeEl.style.width = scaleToContainer(frameWidth)
-    elements.previewCompositeEl.style.height = scaleToContainer(frameHeight)
-    elements.previewCompositeEl.style.left = scaleToContainer(placement.x)
-    elements.previewCompositeEl.style.top = scaleToContainer(placement.y)
+    elements.previewStageEl.dataset.previewMode = isViewportPreview ? 'viewport' : 'shot'
+    elements.previewStageEl.style.aspectRatio = isViewportPreview
+      ? `${browserW} / ${browserH}`
+      : '1920 / 1080'
+
+    elements.previewCompositeEl.style.width = isViewportPreview
+      ? '100%'
+      : scaleToContainer(frameWidth)
+    elements.previewCompositeEl.style.height = isViewportPreview
+      ? '100%'
+      : scaleToContainer(frameHeight)
+    elements.previewCompositeEl.style.left = isViewportPreview ? '0' : scaleToContainer(placement.x)
+    elements.previewCompositeEl.style.top = isViewportPreview ? '0' : scaleToContainer(placement.y)
     elements.previewCompositeEl.style.transform = `translate(${scaleToContainer(deviceMotion.x)}, ${scaleToContainer(deviceMotion.y)}) scale(${zoomScale * deviceMotion.scale})`
     elements.previewCompositeEl.style.transformOrigin = 'center center'
 
     elements.previewWindowEl.classList.toggle('has-mockup', Boolean(mockupSpec))
-    elements.previewWindowEl.style.width = scaleToContainer(browserW)
-    elements.previewWindowEl.style.height = scaleToContainer(browserH)
-    elements.previewWindowEl.style.left = scaleToContainer(mockupSpec?.screenX || 0)
-    elements.previewWindowEl.style.top = scaleToContainer(mockupSpec?.screenY || 0)
+    elements.previewWindowEl.style.width = isViewportPreview
+      ? '100%'
+      : scaleToContainer(browserW)
+    elements.previewWindowEl.style.height = isViewportPreview
+      ? '100%'
+      : scaleToContainer(browserH)
+    elements.previewWindowEl.style.left = isViewportPreview
+      ? '0'
+      : scaleToContainer(mockupSpec?.screenX || 0)
+    elements.previewWindowEl.style.top = isViewportPreview
+      ? '0'
+      : scaleToContainer(mockupSpec?.screenY || 0)
     elements.previewWindowEl.style.borderRadius = scaleToContainer(
       mockupSpec?.screenRadius || borderRadius,
     )
@@ -224,6 +384,19 @@ export function createPreviewRenderer(elements, state) {
       )
     } else {
       elements.previewCursorEl.hidden = true
+    }
+
+    const selectedTarget = getSelectedTargetRect(state)
+    if (selectedTarget) {
+      elements.previewTargetHighlightEl.hidden = false
+      elements.previewTargetHighlightEl.style.left = `${selectedTarget.rect.x * 100}%`
+      elements.previewTargetHighlightEl.style.top = `${selectedTarget.rect.y * 100}%`
+      elements.previewTargetHighlightEl.style.width = `${selectedTarget.rect.width * 100}%`
+      elements.previewTargetHighlightEl.style.height = `${selectedTarget.rect.height * 100}%`
+      elements.previewTargetLabelEl.textContent = selectedTarget.label
+    } else {
+      elements.previewTargetHighlightEl.hidden = true
+      elements.previewTargetLabelEl.textContent = ''
     }
 
     if (state.selectedBgImagePath) {

@@ -1,9 +1,9 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 
 // Import recorder logic
-const { startRecording, analyzeUrl, renderPreviewState } = require('./recorder');
+const { startRecording, analyzeUrl, renderPreviewState, disposePreviewState } = require('./recorder');
 
 let mainWindow;
 
@@ -52,9 +52,34 @@ app.on('window-all-closed', () => {
   }
 });
 
+app.on('before-quit', async () => {
+  try {
+    await disposePreviewState();
+  } catch {}
+});
+
 // IPC Handlers
+ipcMain.handle('open-file', async (event, filePath) => {
+  await shell.openPath(filePath)
+})
+
 ipcMain.on('close-window', () => {
   app.quit();
+});
+
+ipcMain.on('minimize-window', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.minimize();
+  }
+});
+
+ipcMain.on('toggle-maximize-window', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+    return;
+  }
+  mainWindow.maximize();
 });
 
 ipcMain.handle('select-image', async () => {
@@ -134,7 +159,7 @@ ipcMain.handle('render-preview-state', async (event, { url, steps, timeMs, brows
   return await renderPreviewState(url, steps, timeMs, browserConfig);
 });
 
-ipcMain.handle('start-recording', async (event, { url, urlSlug, steps, durationSec, bgColor, bgImagePath, borderRadius, zoomPercent, quality, browserConfig, placement, cursor, mockup, motion }) => {
+ipcMain.handle('start-recording', async (event, { url, urlSlug, steps, durationSec, bgColor, bgImagePath, borderRadius, zoomPercent, camera, quality, browserConfig, placement, cursor, interaction, mockup, motion, render }) => {
   try {
     const outputPath = path.join(__dirname, '..', 'output', `${urlSlug}-${Date.now()}.mp4`);
     
@@ -143,7 +168,7 @@ ipcMain.handle('start-recording', async (event, { url, urlSlug, steps, durationS
       mainWindow.webContents.send('recording-progress', msg);
     };
 
-    await startRecording(url, steps, durationSec, bgColor, bgImagePath, borderRadius, zoomPercent, quality, browserConfig, placement, cursor, mockup, motion, outputPath, onProgress);
+    await startRecording(url, steps, durationSec, bgColor, bgImagePath, borderRadius, zoomPercent, camera, quality, browserConfig, placement, cursor, interaction, mockup, motion, render, outputPath, onProgress);
     
     return { success: true, outputPath };
   } catch (err) {
