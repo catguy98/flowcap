@@ -88,6 +88,7 @@ async function composeFinalVideo({
   browserConfig,
   placement,
   fps = 60,
+  trimStartSec = 0,
   outputPath,
   onProgress,
 }) {
@@ -149,7 +150,7 @@ async function composeFinalVideo({
 
   if (bgImagePath) {
     onProgress('Compositing high quality final video with custom background image...')
-    ffmpegArgs = ['-y', '-loop', '1', '-i', bgImagePath, '-i', rawVideoPath, '-i', maskPath]
+    ffmpegArgs = ['-y', '-loop', '1', '-i', bgImagePath, '-ss', String(trimStartSec), '-i', rawVideoPath, '-i', maskPath]
 
     if (mockupFramePath) {
       ffmpegArgs.push('-loop', '1', '-i', mockupFramePath)
@@ -171,6 +172,7 @@ async function composeFinalVideo({
     const formattedColor = bgColor ? bgColor.replace('#', '0x') : '0x0a0a0f'
     ffmpegArgs = [
       '-y',
+      '-ss', String(trimStartSec),
       '-i',
       rawVideoPath,
       '-i',

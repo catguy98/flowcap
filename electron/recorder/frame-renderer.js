@@ -235,10 +235,20 @@ async function createStudioTimeline({ context, page, framesDir, fps, onProgress 
   }
 
   async function advanceFrame() {
+    // Freeze animations BEFORE the clock runs so real-time drift cannot occur.
+    // Previously, clock.runFor() took real wall-clock time to execute (5–20ms),
+    // during which CSS animations advanced by that real amount. syncWebAnimations
+    // then added frameIntervalMs on top — causing animations to run 30–50% too fast.
+    await page.evaluate(() => {
+      document.getAnimations().forEach((anim) => {
+        const target = anim.effect?.target
+        if (target?.id === 'flowcap-showcase-cursor') return
+        if (anim.playState === 'running') anim.pause()
+      })
+    }).catch(() => {})
+
     await context.clock.runFor(frameIntervalMs)
-    // Sync web animations to virtual time AFTER advancing the clock but BEFORE
-    // taking the screenshot. This counteracts any real-time advancement that
-    // happened during the clock.runFor() call itself.
+    // Now syncWebAnimations adds exactly frameIntervalMs with no drift on top.
     await syncWebAnimations(frameIntervalMs)
     return captureFrame()
   }
@@ -498,7 +508,7 @@ async function executeStudioStep(page, step, timeline, runtime, onProgress) {
       // Previously 400ms was discarded via fastForward, gutting the middle of every
       // expand/collapse transition and making the UI appear to snap.
       // captureMs can be overridden per-step via step.captureMs (e.g. 300 for fast transitions).
-      const captureMs = parseInt(step.captureMs, 10) || 700
+      const captureMs = parseInt(step.captureMs, 10) || 1200
       await timeline.captureFor(captureMs)
       return
     }
@@ -550,7 +560,7 @@ async function executeStudioStep(page, step, timeline, runtime, onProgress) {
 
       // Human settle: pause to observe the click result (600-1000ms)
       // Humans don't instantly rush to the next target — they watch the UI react
-      await timeline.captureFor(600 + Math.round(Math.random() * 400))
+      await timeline.captureFor(900 + Math.round(Math.random() * 600))
       return
     }
     case 'type': {
@@ -701,7 +711,13 @@ async function startFrameRenderedRecording({
     onProgress(`Studio Render -> browser=${browserConfig.width}x${browserConfig.height} fps=${fps}`)
     browser = await chromium.launch({
       headless: true,
-      args: ['--disable-gpu', '--no-sandbox', '--disable-setuid-sandbox'],
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--enable-gpu-rasterization',
+        '--enable-zero-copy',
+        '--use-gl=swiftshader',  // software OpenGL — works without real GPU hardware
+      ],
     })
     context = await browser.newContext({
       viewport: { width: browserConfig.width, height: browserConfig.height },

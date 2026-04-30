@@ -107,6 +107,7 @@ async function executeStep(page, step, onProgress, runtime = {}) {
         } else {
           await locator.click()
         }
+        await page.waitForTimeout(800) // settle time for post-click animations
         break
       }
       case 'type': {

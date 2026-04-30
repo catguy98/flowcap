@@ -86,7 +86,10 @@ async function startRecording(
     height: browserConfig.height,
   }
 
-  const browser = await chromium.launch({ headless: true })
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--use-gl=swiftshader', '--enable-gpu-rasterization'],
+  })
   const context = await browser.newContext({
     viewport: { width: browserConfig.width, height: browserConfig.height },
     recordVideo: {
@@ -100,6 +103,7 @@ async function startRecording(
   onProgress(`Navigating to ${url}...`)
   await page.goto(url, { waitUntil: 'load' })
   await page.waitForTimeout(1000)
+  const PAGE_LOAD_TRIM_SEC = 1.5  // skip the loading screen from the output
   onProgress(
     `Capture source -> viewport=${browserConfig.width}x${browserConfig.height} video=${recordVideoSize.width}x${recordVideoSize.height}${requestedCaptureScale > 1 ? ` (requested scale ${requestedCaptureScale} ignored for Playwright video stability)` : ''}`,
   )
@@ -128,13 +132,6 @@ async function startRecording(
           box-shadow: none !important;
           opacity: 1 !important;
           visibility: visible !important;
-        }
-        *:hover {
-          animation: none !important;
-        }
-        *:hover::before,
-        *:hover::after {
-          animation: none !important;
         }
       `,
     })
@@ -190,7 +187,7 @@ async function startRecording(
   }
 
   onProgress('Waiting for duration end...')
-  await page.waitForTimeout(1000)
+  await page.waitForTimeout(Math.max((Number.parseFloat(durationSec) || 3) * 1000, 1000))
 
   const video = page.video()
   const rawVideoPath = path.join(__dirname, '..', 'output', `temp_raw_${Date.now()}.webm`)
@@ -221,6 +218,7 @@ async function startRecording(
     bgColor,
     durationSec,
     zoomPercent,
+    trimStartSec: PAGE_LOAD_TRIM_SEC,
     camera:
       camera?.anchorMode === 'subject' && subjectCenter
         ? {
