@@ -24,263 +24,65 @@ function getStudioFps(render) {
   return Math.min(Math.max(fps, 24), 90)
 }
 
-function estimateStudioStepDuration(step) {
-  switch (step.action) {
-    case 'wait':
-      return parseInt(step.ms, 10) || 0
-    case 'wait_for':
-      return 180
-    case 'hover':
-      return 340
-    case 'click':
-      return 360
-    case 'scroll':
-      return 260
-    case 'type': {
-      const textLength = (step.text || '').length
-      const delay = parseInt(step.delay, 10) || 70
-      return textLength * Math.max(delay, 30) + 280
-    }
-    default:
-      return 220
-  }
-}
-
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
 }
 
-async function encodeFrameSequence({ framesDir, rawVideoPath, fps, render, onProgress }) {
-  const motionBlurRaw = parseInt(render?.motionBlur, 10)
-  const blurFrames = Number.isFinite(motionBlurRaw) && motionBlurRaw >= 0
-    ? Math.min(motionBlurRaw, 5)
-    : 1
+// ---------------------------------------------------------------------------
+// CDP Screencast Capture
+//
+// Uses Chrome DevTools Protocol Page.startScreencast to capture EVERY frame
+// the compositor renders. No virtual clock, no syncWebAnimations hacks.
+// The browser runs at natural speed, and we capture exactly what a user sees.
+// ---------------------------------------------------------------------------
 
-  if (blurFrames > 0) {
-    // Build weighted tmix: center frame gets highest weight, neighbors taper off
-    // e.g. frames=3 -> weights='1 4 1', frames=5 -> weights='1 2 5 2 1'
-    const half = Math.floor(blurFrames / 2)
-    const weights = []
-    for (let i = -half; i <= half; i += 1) {
-      weights.push(i === 0 ? String(half * 2 + 1) : '1')
-    }
-    const weightStr = weights.join(' ')
-    const totalFrames = blurFrames * 2 + 1
-
-    onProgress(
-      `Encoding Studio frames -> ${fps}fps with motion blur (tmix frames=${totalFrames} weights='${weightStr}')...`,
-    )
-    await runFfmpeg([
-      '-y',
-      '-framerate',
-      String(fps),
-      '-i',
-      path.join(framesDir, 'frame_%06d.png'),
-      '-vf',
-      `tmix=frames=${totalFrames}:weights='${weightStr}'`,
-      '-c:v',
-      'libx264rgb',
-      '-preset',
-      'ultrafast',
-      '-crf',
-      '0',
-      '-pix_fmt',
-      'rgb24',
-      rawVideoPath,
-    ])
-  } else {
-    onProgress(`Encoding Studio frame sequence -> ${fps}fps lossless intermediate...`)
-    await runFfmpeg([
-      '-y',
-      '-framerate',
-      String(fps),
-      '-i',
-      path.join(framesDir, 'frame_%06d.png'),
-      '-c:v',
-      'libx264rgb',
-      '-preset',
-      'ultrafast',
-      '-crf',
-      '0',
-      '-pix_fmt',
-      'rgb24',
-      rawVideoPath,
-    ])
-  }
-}
-
-async function getLocatorTargetPoint(locator) {
-  return locator.evaluate((element) => {
-    const rect = element.getBoundingClientRect()
-    if (!rect || rect.width <= 0 || rect.height <= 0) return null
-
-    const visualControl =
-      element.matches('label')
-        ? element.querySelector(
-          '.privacy-option-control, [data-record-target$="-control"], [role="radio"], [role="checkbox"]',
-        )
-        : null
-
-    if (visualControl instanceof HTMLElement) {
-      const controlRect = visualControl.getBoundingClientRect()
-      if (controlRect.width > 0 && controlRect.height > 0) {
-        return {
-          x: controlRect.x + controlRect.width / 2,
-          y: controlRect.y + controlRect.height / 2,
-        }
-      }
-    }
-
-    return {
-      x: rect.x + rect.width / 2,
-      y: rect.y + rect.height / 2,
-    }
-  })
-}
-
-async function waitForStableLocator(locator, page, timeline, options = {}) {
-  const timeoutMs = options.timeoutMs ?? 1200
-  const stableMs = options.stableMs ?? 160
-  const threshold = options.threshold ?? 0.75
-  let elapsed = 0
-  let lastBox = null
-  let stableFor = 0
-
-  // Use captureFor (not fastForward) so that any ongoing layout animation is
-  // recorded frame-by-frame. Previously this used fastForward, silently eating
-  // up to 1200ms of animation that the viewer would never see.
-  while (elapsed < timeoutMs) {
-    const box = await locator.boundingBox().catch(() => null)
-    if (!box) {
-      stableFor = 0
-      lastBox = null
-      await timeline.captureFor(50)
-      elapsed += 50
-      continue
-    }
-
-    if (
-      lastBox &&
-      Math.abs(box.x - lastBox.x) <= threshold &&
-      Math.abs(box.y - lastBox.y) <= threshold &&
-      Math.abs(box.width - lastBox.width) <= threshold &&
-      Math.abs(box.height - lastBox.height) <= threshold
-    ) {
-      stableFor += 50
-      if (stableFor >= stableMs) return box
-    } else {
-      stableFor = 0
-    }
-
-    lastBox = box
-    await timeline.captureFor(50)
-    elapsed += 50
-  }
-
-  return lastBox
-}
-
-async function createStudioTimeline({ context, page, framesDir, fps, onProgress }) {
-  const frameIntervalMs = 1000 / fps
+async function startScreencastCapture(cdpSession, framesDir) {
   let frameIndex = 0
+  const pendingWrites = []
 
-  // Sync ALL active Web Animations (CSS transitions, CSS keyframes, WAAPI, Framer Motion
-  // in WAAPI mode) to the virtual clock by pausing them and manually advancing currentTime.
-  //
-  // Why this is necessary: rAF fires in real-time between our await calls (Playwright wraps
-  // it but does not freeze it). Real time leaks into animation timelines, causing CSS
-  // transitions and JS animations to race ahead of the virtual frame clock. Without this,
-  // a 300ms animation may complete in just 3-4 frames of captured video instead of ~18.
-  //
-  // We skip the FlowCap cursor element so its click-pulse keyframe still plays correctly.
-  async function syncWebAnimations(intervalMs) {
-    await page.evaluate((interval) => {
-      document.getAnimations().forEach((anim) => {
-        // Skip cursor animations — they're intentionally real-time driven
-        const target = anim.effect && anim.effect.target
-        if (target && target.id === 'flowcap-showcase-cursor') return
+  cdpSession.on('Page.screencastFrame', async ({ data, metadata, sessionId }) => {
+    // Acknowledge immediately so the next frame can be sent
+    try {
+      await cdpSession.send('Page.screencastFrameAck', { sessionId })
+    } catch { /* session may have closed */ }
 
-        if (anim.playState === 'running') {
-          anim.pause()
-        }
-        if (anim.playState === 'paused') {
-          anim.currentTime = (anim.currentTime || 0) + interval
-        }
-      })
-    }, intervalMs).catch(() => {})
-  }
-
-  async function captureFrame() {
     frameIndex += 1
     const framePath = path.join(framesDir, `frame_${padFrameNumber(frameIndex)}.png`)
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        await page.screenshot({
-          path: framePath,
-          scale: 'css',
-          animations: 'allow',
-          timeout: 15000,
-        })
-        break
-      } catch (err) {
-        if (attempt >= 2) throw err
-        await context.clock.runFor(80)
-        await syncWebAnimations(80)
-      }
-    }
-    if (frameIndex === 1 || frameIndex % fps === 0) {
-      onProgress(`Studio frame ${frameIndex}`)
-    }
-    return true
-  }
+    const writePromise = fs.writeFile(framePath, Buffer.from(data, 'base64'))
+    pendingWrites.push(writePromise)
+    writePromise.then(() => {
+      const idx = pendingWrites.indexOf(writePromise)
+      if (idx !== -1) pendingWrites.splice(idx, 1)
+    })
+  })
 
-  async function advanceFrame() {
-    // Freeze animations BEFORE the clock runs so real-time drift cannot occur.
-    // Previously, clock.runFor() took real wall-clock time to execute (5–20ms),
-    // during which CSS animations advanced by that real amount. syncWebAnimations
-    // then added frameIntervalMs on top — causing animations to run 30–50% too fast.
-    await page.evaluate(() => {
-      document.getAnimations().forEach((anim) => {
-        const target = anim.effect?.target
-        if (target?.id === 'flowcap-showcase-cursor') return
-        if (anim.playState === 'running') anim.pause()
-      })
-    }).catch(() => {})
-
-    await context.clock.runFor(frameIntervalMs)
-    // Now syncWebAnimations adds exactly frameIntervalMs with no drift on top.
-    await syncWebAnimations(frameIntervalMs)
-    return captureFrame()
-  }
-
-  async function captureFor(durationMs) {
-    const frames = Math.max(1, Math.ceil((Number.parseFloat(durationMs) || 0) / frameIntervalMs))
-    for (let index = 0; index < frames; index += 1) {
-      await advanceFrame()
-    }
-  }
-
-  async function fastForward(durationMs) {
-    // Advance virtual clock without capturing frames.
-    await context.clock.runFor(durationMs)
-    // Still sync animations so they don't drift ahead during skipped time.
-    await syncWebAnimations(durationMs)
-  }
+  await cdpSession.send('Page.startScreencast', {
+    format: 'png',
+    quality: 100,
+    maxWidth: 0,
+    maxHeight: 0,
+    everyNthFrame: 1,
+  })
 
   return {
-    get frameIndex() {
-      return frameIndex
+    get frameIndex() { return frameIndex },
+    async stop() {
+      try { await cdpSession.send('Page.stopScreencast') } catch { /* ignore */ }
+      // Wait for any in-progress frame writes to complete
+      await Promise.all(pendingWrites)
     },
-    frameIntervalMs,
-    captureFrame,
-    advanceFrame,
-    captureFor,
-    fastForward,
   }
 }
 
-async function moveStudioCursorToLocator(page, locator, timeline, cursor, options = {}) {
-  const targetPoint = await getLocatorTargetPoint(locator)
+// ---------------------------------------------------------------------------
+// Real-time cursor movement
+//
+// Uses requestAnimationFrame (not setInterval) so cursor updates are synced
+// to the browser's actual render cycle — matching what a real user sees.
+// ---------------------------------------------------------------------------
+
+async function moveRealtimeCursorToLocator(page, locator, cursor) {
+  const targetPoint = await getLocatorInteractionPoint(locator)
   if (!targetPoint) return
 
   if (!cursor?.enabled) {
@@ -295,13 +97,9 @@ async function moveStudioCursorToLocator(page, locator, timeline, cursor, option
 
   const distance = Math.hypot(targetPoint.x - previous.x, targetPoint.y - previous.y)
   const paceScale = Number.parseFloat(cursor?.paceScale) || 1
-  // Human-like speed: cursor.speed = pixels/second (default 450)
-  // Humans move at 200-600 px/s depending on distance
   const speed = Number.parseFloat(cursor?.speed) || 450
-  // Minimum 350ms — even tiny moves take time for a real hand
-  // Long distances get faster effective speed (Fitts' Law — humans speed up for big moves)
-  const baseDur = options.duration ?? Math.max(Math.round((distance / speed) * 1000), 350)
-  const duration = options.duration ?? clamp(
+  const baseDur = Math.max(Math.round((distance / speed) * 1000), 350)
+  const duration = clamp(
     Math.round(baseDur * paceScale * (0.88 + Math.random() * 0.24)), 250, 4000,
   )
 
@@ -321,18 +119,15 @@ async function moveStudioCursorToLocator(page, locator, timeline, cursor, option
   const seedV = (Math.random() * 9999) | 0
   const seedT = (Math.random() * 9999) | 0
 
-  // Overshoot behavior: ~40% chance to overshoot target by 5-15px, then correct back
   const doOvershoot = Math.random() < 0.4 && distance > 30
   const overshootPx = doOvershoot ? (5 + Math.random() * 10) : 0
   const overshootX = targetPoint.x + (dx / dist) * overshootPx
   const overshootY = targetPoint.y + (dy / dist) * overshootPx
-  const correctMs = doOvershoot ? (80 + Math.random() * 60) : 0  // 80-140ms correction
+  const correctMs = doOvershoot ? (80 + Math.random() * 60) : 0
 
   const fullDuration = duration + 130 + correctMs
 
-  // Clear hover from the previous element — dispatch mouseout/mouseleave
-  // so the old target loses its hover highlight during cursor animation.
-  // page.mouse.move(-1,-1) alone doesn't reliably trigger mouseleave.
+  // Dispatch mouseout on previous element
   await page.evaluate(() => {
     const pos = window.__flowcapCursorPosition
     if (pos) {
@@ -343,10 +138,9 @@ async function moveStudioCursorToLocator(page, locator, timeline, cursor, option
       }
     }
   })
-  // Also move native mouse to a safe neutral position
   await page.mouse.move(0, 0)
 
-  // setInterval(1ms) fires each virtual clock ms — updates cursor position every captured frame
+  // Use requestAnimationFrame for real-time cursor animation
   await page.evaluate(
     ({ fromX, fromY, cx1, cy1, cx2, cy2, toX, toY, durationMs, fullDurationMs, dist: d, sJ, sV, sT, doOvershoot, overX, overY, correctMs: corrMs }) => {
       const cursorEl = document.getElementById('flowcap-showcase-cursor')
@@ -430,44 +224,47 @@ async function moveStudioCursorToLocator(page, locator, timeline, cursor, option
         cursorEl.style.setProperty('--flowcap-y', pos.y.toFixed(2))
 
         if (elapsed >= fullDurationMs) {
-          clearInterval(window.__flowcapCursorInterval)
           cursorEl.style.setProperty('--flowcap-x', String(toX))
           cursorEl.style.setProperty('--flowcap-y', String(toY))
           window.__flowcapCursorPosition = { x: toX, y: toY }
+          return true // animation complete
         }
+
+        return false // continue
       }
 
-      if (window.__flowcapCursorInterval) clearInterval(window.__flowcapCursorInterval)
-      window.__flowcapCursorInterval = setInterval(update, 1)
+      if (window.__flowcapCursorRAF) cancelAnimationFrame(window.__flowcapCursorRAF)
+      function loop() {
+        const done = update()
+        if (!done) window.__flowcapCursorRAF = requestAnimationFrame(loop)
+      }
+      window.__flowcapCursorRAF = requestAnimationFrame(loop)
     },
     {
       fromX: previous.x, fromY: previous.y,
       cx1: c1x, cy1: c1y, cx2: c2x, cy2: c2y,
       toX: targetPoint.x, toY: targetPoint.y,
       durationMs: duration, fullDurationMs: fullDuration,
-      dist, sJ: seedJ, sV: seedV, sT: seedT,
+      dist: distance, sJ: seedJ, sV: seedV, sT: seedT,
       doOvershoot, overX: overshootX, overY: overshootY, correctMs,
     },
   )
 
-  // Capture all animation frames (cursor traveling from A to B + post-landing vibration)
-  await timeline.captureFor(fullDuration)
+  // Wait for the full cursor animation to play out in real time
+  await page.waitForTimeout(fullDuration)
 
-  // Move native mouse to target now that visual cursor has arrived.
-  // This triggers correct CSS hover / mouseenter on the target element
-  // for all subsequent dwell frames.
+  // Move native mouse to target
   await page.mouse.move(targetPoint.x, targetPoint.y)
 
-  // Dynamic cursor: switch to pointer over clickable targets, dot otherwise
-  // Temporarily remove cursor:none override to read the real cursor style
+  // Dynamic cursor: switch to pointer over clickable targets
   const needsPointer = await locator.evaluate((el) => {
     const styleEl = document.getElementById('flowcap-showcase-cursor-style')
     if (styleEl) {
       const saved = styleEl.textContent
       styleEl.textContent = saved.replace(/html, body, body \* \{ cursor: none !important; \}/, '')
-      void el.offsetHeight // force reflow
+      void el.offsetHeight
       var result = window.getComputedStyle(el).cursor === 'pointer'
-      styleEl.textContent = saved // restore
+      styleEl.textContent = saved
       return result
     }
     return window.getComputedStyle(el).cursor === 'pointer'
@@ -480,22 +277,58 @@ async function moveStudioCursorToLocator(page, locator, timeline, cursor, option
     el.classList.add(isPointer ? 'is-pointer' : 'is-arrow')
   }, needsPointer)
 
-  // Capture a few frames after cursor type switch so the new shape is visible
-  await timeline.captureFor(80)
+  // Brief pause so cursor type change is visible
+  await page.waitForTimeout(80)
 }
 
-async function executeStudioStep(page, step, timeline, runtime, onProgress) {
-  onProgress(`Studio executing: ${step.action}`)
+// ---------------------------------------------------------------------------
+// Step execution — real-time waits, no virtual clock
+// ---------------------------------------------------------------------------
 
-  // Cursor is the driver — cursor travel time IS the video timing.
-  // Actions happen on arrival. No artificial waits.
+async function waitForStableLocatorRealtime(locator, page, options = {}) {
+  const timeoutMs = options.timeoutMs ?? 1200
+  const stableMs = options.stableMs ?? 160
+  const threshold = options.threshold ?? 0.75
+  const startedAt = Date.now()
+  let lastBox = null
+  let stableSince = 0
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const box = await locator.boundingBox().catch(() => null)
+    if (!box) {
+      stableSince = 0
+      lastBox = null
+      await page.waitForTimeout(50)
+      continue
+    }
+
+    if (
+      lastBox &&
+      Math.abs(box.x - lastBox.x) <= threshold &&
+      Math.abs(box.y - lastBox.y) <= threshold &&
+      Math.abs(box.width - lastBox.width) <= threshold &&
+      Math.abs(box.height - lastBox.height) <= threshold
+    ) {
+      if (!stableSince) stableSince = Date.now()
+      if (Date.now() - stableSince >= stableMs) return box
+    } else {
+      stableSince = 0
+    }
+
+    lastBox = box
+    await page.waitForTimeout(50)
+  }
+
+  return lastBox
+}
+
+async function executeRealtimeStep(page, step, cursor, interaction, onProgress) {
+  onProgress(`Executing: ${step.action}`)
 
   switch (step.action) {
-    // wait: honour explicit pauses — capture frames so the viewer sees the UI at rest.
-    // Previously silently ignored, making flows feel rushed and cutting intentional pauses.
     case 'wait': {
       const waitMs = parseInt(step.ms, 10) || 1000
-      await timeline.captureFor(waitMs)
+      await page.waitForTimeout(waitMs)
       return
     }
     case 'wait_for': {
@@ -504,36 +337,31 @@ async function executeStudioStep(page, step, timeline, runtime, onProgress) {
         state: step.state || 'visible',
         timeout: parseInt(step.timeout, 10) || 5000,
       })
-      // Capture the full animation from first frame to settled state — no frames skipped.
-      // Previously 400ms was discarded via fastForward, gutting the middle of every
-      // expand/collapse transition and making the UI appear to snap.
-      // captureMs can be overridden per-step via step.captureMs (e.g. 300 for fast transitions).
+      // Let the resulting animation play out fully
       const captureMs = parseInt(step.captureMs, 10) || 1200
-      await timeline.captureFor(captureMs)
+      await page.waitForTimeout(captureMs)
       return
     }
     case 'hover': {
-      // Cursor drives: move to target, arrive, dwell to observe, settle
       const locator = page.locator(step.selector).first()
       await locator.waitFor({ state: 'visible', timeout: 5000 })
-      await waitForStableLocator(locator, page, timeline, { timeoutMs: 200, stableMs: 40 })
-      await moveStudioCursorToLocator(page, locator, timeline, runtime.cursor)
+      await waitForStableLocatorRealtime(locator, page, { timeoutMs: 200, stableMs: 40 })
+      await moveRealtimeCursorToLocator(page, locator, cursor)
       const tp = await getLocatorInteractionPoint(locator)
       if (tp) await locator.hover({ position: { x: tp.offsetX, y: tp.offsetY } })
       else await locator.hover()
-      // Human hover dwell: pause to read/examine what you hovered (500-900ms)
-      await timeline.captureFor(500 + Math.round(Math.random() * 400))
+      // Human hover dwell
+      await page.waitForTimeout(500 + Math.round(Math.random() * 400))
       return
     }
     case 'click': {
-      // Cursor drives: move to target, arrive, dwell, click, brief visual settle
       const locator = page.locator(step.selector).first()
       await locator.waitFor({ state: 'visible', timeout: 5000 })
-      await waitForStableLocator(locator, page, timeline)
-      await moveStudioCursorToLocator(page, locator, timeline, runtime.cursor)
-      // Human dwell: pause after arriving before clicking — reading the target (400-700ms)
-      await timeline.captureFor(400 + Math.round(Math.random() * 300))
-      await pulseShowcaseCursor(page, runtime.cursor)
+      await waitForStableLocatorRealtime(locator, page)
+      await moveRealtimeCursorToLocator(page, locator, cursor)
+      // Human dwell before clicking
+      await page.waitForTimeout(400 + Math.round(Math.random() * 300))
+      await pulseShowcaseCursor(page, cursor)
 
       if (
         typeof step.selector === 'string' &&
@@ -554,26 +382,23 @@ async function executeStudioStep(page, step, timeline, runtime, onProgress) {
         }
       }
 
-      // Move native mouse off the clicked element so hover doesn't linger
-      // on it or any newly-appearing elements during the settle phase
       await page.mouse.move(0, 0)
 
-      // Human settle: pause to observe the click result (600-1000ms)
-      // Humans don't instantly rush to the next target — they watch the UI react
-      await timeline.captureFor(900 + Math.round(Math.random() * 600))
+      // Settle time — let the user see the result
+      await page.waitForTimeout(900 + Math.round(Math.random() * 600))
       return
     }
     case 'type': {
       const locator = page.locator(step.selector).first()
       await locator.waitFor({ state: 'visible', timeout: 5000 })
-      await waitForStableLocator(locator, page, timeline)
+      await waitForStableLocatorRealtime(locator, page)
       const isAlreadyFocused = await locator.evaluate(
         (element) => element === document.activeElement,
       )
 
       if (!isAlreadyFocused) {
-        await moveStudioCursorToLocator(page, locator, timeline, runtime.cursor)
-        await pulseShowcaseCursor(page, runtime.cursor)
+        await moveRealtimeCursorToLocator(page, locator, cursor)
+        await pulseShowcaseCursor(page, cursor)
         const targetPoint = await getLocatorInteractionPoint(locator)
         if (targetPoint) {
           await locator.click({
@@ -590,62 +415,70 @@ async function executeStudioStep(page, step, timeline, runtime, onProgress) {
       const delay = Math.max(parseInt(step.delay, 10) || 70, 30)
       for (const char of step.text || '') {
         await page.keyboard.type(char)
-        await timeline.captureFor(delay)
+        await page.waitForTimeout(delay)
       }
       return
     }
     case 'scroll':
       await page.evaluate((y) => window.scrollBy(0, y), parseInt(step.y, 10) || 0)
-      await timeline.captureFor(60)
+      await page.waitForTimeout(60)
       return
     default:
       return
   }
 }
 
-async function captureStudioFrames({
-  context,
-  page,
-  steps,
-  framesDir,
-  fps,
-  cursor,
-  interaction,
-  render,
-  onProgress,
-}) {
-  const timeline = await createStudioTimeline({
-    context,
-    page,
-    framesDir,
-    fps,
-    onProgress,
-  })
+// ---------------------------------------------------------------------------
+// Encoding — same as before
+// ---------------------------------------------------------------------------
 
-  onProgress(`Capturing Studio frames with virtual clock at ${fps}fps`)
-  const requestedPaceScale = Number.parseFloat(render?.paceScale)
-  const paceScale = Number.isFinite(requestedPaceScale)
-    ? clamp(requestedPaceScale, 0.5, 3)
+async function encodeFrameSequence({ framesDir, rawVideoPath, fps, render, onProgress }) {
+  const motionBlurRaw = parseInt(render?.motionBlur, 10)
+  const blurFrames = Number.isFinite(motionBlurRaw) && motionBlurRaw >= 0
+    ? Math.min(motionBlurRaw, 5)
     : 1
-  onProgress(`Studio pacing -> actionScale=${paceScale.toFixed(2)}x`)
-  await timeline.captureFrame()
 
-  for (let index = 0; index < steps.length; index += 1) {
-    await executeStudioStep(
-      page,
-      steps[index],
-      timeline,
-      {
-        cursor: { ...cursor, paceScale },
-        interaction,
-        paceScale,
-      },
-      onProgress,
+  if (blurFrames > 0) {
+    const half = Math.floor(blurFrames / 2)
+    const weights = []
+    for (let i = -half; i <= half; i += 1) {
+      weights.push(i === 0 ? String(half * 2 + 1) : '1')
+    }
+    const weightStr = weights.join(' ')
+    const totalFrames = blurFrames * 2 + 1
+
+    onProgress(
+      `Encoding frames -> ${fps}fps with motion blur (tmix frames=${totalFrames} weights='${weightStr}')...`,
     )
+    await runFfmpeg([
+      '-y',
+      '-framerate', String(fps),
+      '-i', path.join(framesDir, 'frame_%06d.png'),
+      '-vf', `tmix=frames=${totalFrames}:weights='${weightStr}'`,
+      '-c:v', 'libx264rgb',
+      '-preset', 'ultrafast',
+      '-crf', '0',
+      '-pix_fmt', 'rgb24',
+      rawVideoPath,
+    ])
+  } else {
+    onProgress(`Encoding frame sequence -> ${fps}fps lossless intermediate...`)
+    await runFfmpeg([
+      '-y',
+      '-framerate', String(fps),
+      '-i', path.join(framesDir, 'frame_%06d.png'),
+      '-c:v', 'libx264rgb',
+      '-preset', 'ultrafast',
+      '-crf', '0',
+      '-pix_fmt', 'rgb24',
+      rawVideoPath,
+    ])
   }
-
-  return timeline.frameIndex
 }
+
+// ---------------------------------------------------------------------------
+// Subject detection
+// ---------------------------------------------------------------------------
 
 async function findSubjectCenter(page) {
   return page.evaluate(() => {
@@ -673,6 +506,10 @@ async function findSubjectCenter(page) {
     return null
   })
 }
+
+// ---------------------------------------------------------------------------
+// Main entry point — same signature as before
+// ---------------------------------------------------------------------------
 
 async function startFrameRenderedRecording({
   chromium,
@@ -702,13 +539,17 @@ async function startFrameRenderedRecording({
   const rawVideoPath = path.join(outputDir, `studio_raw_${renderId}.mkv`)
   let browser = null
   let context = null
+  let page = null
+  let cdpSession = null
+  let screencast = null
   let mockupFramePath = null
   let maskPath = null
 
   await fs.mkdir(framesDir, { recursive: true })
 
   try {
-    onProgress(`Studio Render -> browser=${browserConfig.width}x${browserConfig.height} fps=${fps}`)
+    onProgress(`Studio Render (CDP Screencast) -> browser=${browserConfig.width}x${browserConfig.height} fps=${fps}`)
+
     browser = await chromium.launch({
       headless: true,
       args: [
@@ -716,18 +557,23 @@ async function startFrameRenderedRecording({
         '--disable-setuid-sandbox',
         '--enable-gpu-rasterization',
         '--enable-zero-copy',
-        '--use-gl=swiftshader',  // software OpenGL — works without real GPU hardware
+        '--use-gl=swiftshader',
       ],
     })
+
     context = await browser.newContext({
       viewport: { width: browserConfig.width, height: browserConfig.height },
       deviceScaleFactor: 2,
     })
-    await context.clock.install({ time: Date.now() })
-    const page = await context.newPage()
+
+    page = await context.newPage()
+
+    // Create CDP session for screencast
+    cdpSession = await context.newCDPSession(page)
 
     onProgress(`Navigating to ${url}...`)
     await page.goto(url, { waitUntil: 'load' })
+
     const contentScale = Number.parseFloat(browserConfig?.captureScale)
     if (Number.isFinite(contentScale) && contentScale > 0 && contentScale !== 1) {
       onProgress(`Content scale -> transform scale=${contentScale}x`)
@@ -736,23 +582,44 @@ async function startFrameRenderedRecording({
         root.style.transform = `scale(${scale})`
         root.style.transformOrigin = 'center center'
       }, contentScale)
-      await context.clock.runFor(100)
     }
-    await context.clock.runFor(1000)
+
+    // Wait for page to settle
+    await page.waitForTimeout(1000)
+
     await installShowcaseCursor(page, cursor)
     await installMotionTimeline(page, motion)
 
-    const frameCount = await captureStudioFrames({
-      context,
-      page,
-      steps,
-      framesDir,
-      fps,
-      cursor,
-      interaction,
-      render,
-      onProgress,
-    })
+    // Start capturing EVERY compositor frame
+    onProgress('Starting CDP screencast capture...')
+    screencast = await startScreencastCapture(cdpSession, framesDir)
+
+    const paceScale = Number.parseFloat(render?.paceScale)
+    const clampedPaceScale = Number.isFinite(paceScale)
+      ? clamp(paceScale, 0.5, 3)
+      : 1
+    onProgress(`Studio pacing -> actionScale=${clampedPaceScale.toFixed(2)}x`)
+
+    // Execute all steps in real-time — every frame is captured
+    for (let index = 0; index < steps.length; index += 1) {
+      await executeRealtimeStep(
+        page,
+        steps[index],
+        { ...cursor, paceScale: clampedPaceScale },
+        interaction,
+        onProgress,
+      )
+    }
+
+    // Stop capturing
+    await screencast.stop()
+    onProgress(`Captured ${screencast.frameIndex} compositor frames`)
+
+    // Wait briefly for any pending frame writes to flush
+    await page.waitForTimeout(200)
+
+    // Now encode the captured frames
+    const frameCount = screencast.frameIndex
     const actualDurationSec = frameCount / fps
     onProgress(`Studio captured ${frameCount} frames -> ${actualDurationSec.toFixed(2)}s at ${fps}fps`)
 
@@ -774,7 +641,7 @@ async function startFrameRenderedRecording({
     onProgress('Generating rounded corner mask...')
     maskPath = await createRoundedMask(context, browserConfig, borderRadius, mockupSpec)
 
-    await page.close().catch(() => { })
+    await page.close().catch(() => {})
     await context.close()
     await browser.close()
     context = null
@@ -814,10 +681,11 @@ async function startFrameRenderedRecording({
     await fs.rm(framesDir, { recursive: true, force: true })
     onProgress(`Done! Saved to ${outputPath}`)
   } catch (error) {
+    if (screencast) await screencast.stop().catch(() => {})
     await cleanupRecordingArtifacts([rawVideoPath, maskPath, mockupFramePath])
-    await fs.rm(framesDir, { recursive: true, force: true }).catch(() => { })
-    if (context) await context.close().catch(() => { })
-    if (browser) await browser.close().catch(() => { })
+    await fs.rm(framesDir, { recursive: true, force: true }).catch(() => {})
+    if (context) await context.close().catch(() => {})
+    if (browser) await browser.close().catch(() => {})
     throw error
   }
 }
