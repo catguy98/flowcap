@@ -82,11 +82,14 @@ async function startScreencastCapture(cdpSession, framesDir) {
 // ---------------------------------------------------------------------------
 
 async function moveRealtimeCursorToLocator(page, locator, cursor) {
-  const targetPoint = await getLocatorInteractionPoint(locator)
-  if (!targetPoint) return
+  const interactionPoint = await getLocatorInteractionPoint(locator)
+  if (!interactionPoint) return
+
+  const targetX = interactionPoint.pageX
+  const targetY = interactionPoint.pageY
 
   if (!cursor?.enabled) {
-    await page.mouse.move(targetPoint.x, targetPoint.y)
+    await page.mouse.move(targetX, targetY)
     return
   }
 
@@ -95,7 +98,7 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
     y: Math.round(window.innerHeight * 0.3),
   })
 
-  const distance = Math.hypot(targetPoint.x - previous.x, targetPoint.y - previous.y)
+  const distance = Math.hypot(targetX - previous.x, targetY - previous.y)
   const paceScale = Number.parseFloat(cursor?.paceScale) || 1
   const speed = Number.parseFloat(cursor?.speed) || 450
   const baseDur = Math.max(Math.round((distance / speed) * 1000), 350)
@@ -103,8 +106,8 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
     Math.round(baseDur * paceScale * (0.88 + Math.random() * 0.24)), 250, 4000,
   )
 
-  const dx = targetPoint.x - previous.x
-  const dy = targetPoint.y - previous.y
+  const dx = targetX - previous.x
+  const dy = targetY - previous.y
   const dist = Math.max(distance, 1)
   const sign = Math.random() > 0.5 ? 1 : -1
   const perpMag = Math.min(dist * (0.07 + Math.random() * 0.07), 44)
@@ -121,8 +124,8 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
 
   const doOvershoot = Math.random() < 0.4 && distance > 30
   const overshootPx = doOvershoot ? (5 + Math.random() * 10) : 0
-  const overshootX = targetPoint.x + (dx / dist) * overshootPx
-  const overshootY = targetPoint.y + (dy / dist) * overshootPx
+  const overshootX = targetX + (dx / dist) * overshootPx
+  const overshootY = targetY + (dy / dist) * overshootPx
   const correctMs = doOvershoot ? (80 + Math.random() * 60) : 0
 
   const fullDuration = duration + 130 + correctMs
@@ -243,7 +246,7 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
     {
       fromX: previous.x, fromY: previous.y,
       cx1: c1x, cy1: c1y, cx2: c2x, cy2: c2y,
-      toX: targetPoint.x, toY: targetPoint.y,
+      toX: targetX, toY: targetY,
       durationMs: duration, fullDurationMs: fullDuration,
       dist: distance, sJ: seedJ, sV: seedV, sT: seedT,
       doOvershoot, overX: overshootX, overY: overshootY, correctMs,
@@ -254,7 +257,7 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
   await page.waitForTimeout(fullDuration)
 
   // Move native mouse to target
-  await page.mouse.move(targetPoint.x, targetPoint.y)
+  await page.mouse.move(targetX, targetY)
 
   // Dynamic cursor: switch to pointer over clickable targets
   const needsPointer = await locator.evaluate((el) => {
