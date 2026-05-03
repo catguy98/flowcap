@@ -338,12 +338,12 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await waitForStableLocatorRealtime(locator, page, { timeoutMs: 200, stableMs: 40 })
       await moveRealtimeCursorToLocator(page, locator, cursor)
       // Pre-hover thinking — cursor is at target, pausing before triggering hover
-      await page.waitForTimeout(5000 + Math.round(Math.random() * 5000))
+      await page.waitForTimeout(500 + Math.round(Math.random() * 500))
       const tp = await getLocatorInteractionPoint(locator)
       if (tp) await locator.hover({ position: { x: tp.offsetX, y: tp.offsetY } })
       else await locator.hover()
       // Human hover dwell — observe the hover state before moving on
-      await page.waitForTimeout(5000 + Math.round(Math.random() * 5000))
+      await page.waitForTimeout(500 + Math.round(Math.random() * 500))
       return
     }
     case 'click': {
@@ -352,7 +352,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await waitForStableLocatorRealtime(locator, page)
       await moveRealtimeCursorToLocator(page, locator, cursor)
       // Human dwell before clicking — absorb the target
-      await page.waitForTimeout(5000 + Math.round(Math.random() * 5000))
+      await page.waitForTimeout(500 + Math.round(Math.random() * 500))
       await pulseShowcaseCursor(page, cursor)
 
       if (
@@ -377,7 +377,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await page.mouse.move(0, 0)
 
       // Settle time — let the user see the result
-      await page.waitForTimeout(5000 + Math.round(Math.random() * 5000))
+      await page.waitForTimeout(500 + Math.round(Math.random() * 500))
       return
     }
     case 'type': {
@@ -582,6 +582,22 @@ async function startFrameRenderedRecording({
     await installShowcaseCursor(page, cursor)
     await installMotionTimeline(page, motion)
 
+    // Inject a hidden animation that forces the compositor to produce frames
+    // continuously — even during static pauses. Without this, CDP Screencast
+    // only captures frames when something visually changes, meaning pauses
+    // produce zero frames and get "compressed out" of the final video.
+    await page.evaluate(() => {
+      const el = document.createElement('div')
+      el.id = 'flowcap-frame-heartbeat'
+      el.setAttribute('aria-hidden', 'true')
+      el.style.cssText = 'position:fixed;top:-1px;left:-1px;width:1px;height:1px;pointer-events:none;z-index:-9999;opacity:0.01;'
+      el.style.animation = 'flowcap-heartbeat 1s linear infinite'
+      const style = document.createElement('style')
+      style.textContent = '@keyframes flowcap-heartbeat { from { transform: translateZ(0); } to { transform: translateZ(0.001px); } }'
+      document.head.appendChild(style)
+      document.body.appendChild(el)
+    })
+
     // Start capturing EVERY compositor frame
     onProgress('Starting CDP screencast capture...')
     screencast = await startScreencastCapture(cdpSession, framesDir)
@@ -606,7 +622,7 @@ async function startFrameRenderedRecording({
       if (index < steps.length - 1) {
         const nextAction = steps[index + 1]?.action
         // Inter-step thinking gap
-        const gapMs = 5000 + Math.round(Math.random() * 5000)   // 5000-10000ms
+        const gapMs = 500 + Math.round(Math.random() * 500)   // 500-1000ms
         await page.waitForTimeout(gapMs)
       }
     }
