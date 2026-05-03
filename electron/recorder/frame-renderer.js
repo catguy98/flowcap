@@ -337,11 +337,13 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await locator.waitFor({ state: 'visible', timeout: 5000 })
       await waitForStableLocatorRealtime(locator, page, { timeoutMs: 200, stableMs: 40 })
       await moveRealtimeCursorToLocator(page, locator, cursor)
+      // Pre-hover thinking — cursor is at target, pausing before triggering hover
+      await page.waitForTimeout(800 + Math.round(Math.random() * 400))
       const tp = await getLocatorInteractionPoint(locator)
       if (tp) await locator.hover({ position: { x: tp.offsetX, y: tp.offsetY } })
       else await locator.hover()
-      // Human hover dwell — longer pause to observe before moving on
-      await page.waitForTimeout(2200 + Math.round(Math.random() * 800))
+      // Human hover dwell — observe the hover state before moving on
+      await page.waitForTimeout(2500 + Math.round(Math.random() * 1000))
       return
     }
     case 'click': {
@@ -350,7 +352,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await waitForStableLocatorRealtime(locator, page)
       await moveRealtimeCursorToLocator(page, locator, cursor)
       // Human dwell before clicking — absorb the target
-      await page.waitForTimeout(2200 + Math.round(Math.random() * 600))
+      await page.waitForTimeout(2500 + Math.round(Math.random() * 800))
       await pulseShowcaseCursor(page, cursor)
 
       if (
@@ -375,7 +377,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await page.mouse.move(0, 0)
 
       // Settle time — let the user see the result
-      await page.waitForTimeout(2500 + Math.round(Math.random() * 1000))
+      await page.waitForTimeout(3000 + Math.round(Math.random() * 1000))
       return
     }
     case 'type': {
@@ -605,8 +607,8 @@ async function startFrameRenderedRecording({
         const nextAction = steps[index + 1]?.action
         // Longer gap before clicks/hovers (thinking what to do), shorter before waits
         const gapMs = (nextAction === 'click' || nextAction === 'hover')
-          ? 1900 + Math.round(Math.random() * 600)   // 1900-2500ms
-          : 1500 + Math.round(Math.random() * 300)   // 1500-1800ms
+          ? 2500 + Math.round(Math.random() * 1000)   // 2500-3500ms
+          : 1800 + Math.round(Math.random() * 500)    // 1800-2300ms
         await page.waitForTimeout(gapMs)
       }
     }
