@@ -341,7 +341,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       if (tp) await locator.hover({ position: { x: tp.offsetX, y: tp.offsetY } })
       else await locator.hover()
       // Human hover dwell — longer pause to observe before moving on
-      await page.waitForTimeout(1000 + Math.round(Math.random() * 800))
+      await page.waitForTimeout(1200 + Math.round(Math.random() * 800))
       return
     }
     case 'click': {
@@ -350,7 +350,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await waitForStableLocatorRealtime(locator, page)
       await moveRealtimeCursorToLocator(page, locator, cursor)
       // Human dwell before clicking — absorb the target
-      await page.waitForTimeout(700 + Math.round(Math.random() * 500))
+      await page.waitForTimeout(1200 + Math.round(Math.random() * 600))
       await pulseShowcaseCursor(page, cursor)
 
       if (
@@ -605,8 +605,8 @@ async function startFrameRenderedRecording({
         const nextAction = steps[index + 1]?.action
         // Longer gap before clicks/hovers (thinking what to do), shorter before waits
         const gapMs = (nextAction === 'click' || nextAction === 'hover')
-          ? 600 + Math.round(Math.random() * 600)   // 600-1200ms
-          : 400 + Math.round(Math.random() * 300)   // 400-700ms
+          ? 900 + Math.round(Math.random() * 600)   // 900-1500ms
+          : 500 + Math.round(Math.random() * 300)   // 500-800ms
         await page.waitForTimeout(gapMs)
       }
     }
