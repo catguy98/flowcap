@@ -9,7 +9,11 @@ contextBridge.exposeInMainWorld('api', {
   selectFlowFile: () => ipcRenderer.invoke('select-flow-file'),
   renderPreviewState: (data) => ipcRenderer.invoke('render-preview-state', data),
   onProgress: (callback) => ipcRenderer.on('recording-progress', (event, msg) => callback(msg)),
-  removeProgressListener: () => ipcRenderer.removeAllListeners('recording-progress'),
+  onPreviewFrame: (callback) => ipcRenderer.on('recording-preview-frame', (event, data) => callback(data)),
+  removeProgressListener: () => {
+    ipcRenderer.removeAllListeners('recording-progress');
+    ipcRenderer.removeAllListeners('recording-preview-frame');
+  },
   closeWindow: () => ipcRenderer.send('close-window'),
   minimizeWindow: () => ipcRenderer.send('minimize-window'),
   toggleMaximizeWindow: () => ipcRenderer.send('toggle-maximize-window'),

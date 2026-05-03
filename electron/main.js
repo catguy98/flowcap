@@ -165,6 +165,11 @@ ipcMain.handle('start-recording', async (event, { url, urlSlug, steps, durationS
     
     // We send an event back to renderer when progress updates
     const onProgress = (msg) => {
+      // Check if this is a preview frame
+      if (msg && msg.startsWith('__preview_frame__:')) {
+        mainWindow.webContents.send('recording-preview-frame', msg.slice('__preview_frame__:'.length));
+        return;
+      }
       mainWindow.webContents.send('recording-progress', msg);
     };
 

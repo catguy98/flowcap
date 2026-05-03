@@ -39,6 +39,10 @@ function clamp(value, min, max) {
 async function startScreencastCapture(cdpSession, framesDir) {
   let frameIndex = 0
   const pendingWrites = []
+  const frameTimestamps = []    // wall-clock time of each captured frame
+  const frameDataBuffer = []    // latest frame base64 for preview streaming
+  let latestFrameData = null
+  const startTime = Date.now()
 
   cdpSession.on('Page.screencastFrame', async ({ data, metadata, sessionId }) => {
     // Acknowledge immediately so the next frame can be sent
@@ -47,6 +51,8 @@ async function startScreencastCapture(cdpSession, framesDir) {
     } catch { /* session may have closed */ }
 
     frameIndex += 1
+    frameTimestamps.push(Date.now())
+    latestFrameData = data  // store for preview streaming
     const framePath = path.join(framesDir, `frame_${padFrameNumber(frameIndex)}.png`)
     const writePromise = fs.writeFile(framePath, Buffer.from(data, 'base64'))
     pendingWrites.push(writePromise)
@@ -66,12 +72,64 @@ async function startScreencastCapture(cdpSession, framesDir) {
 
   return {
     get frameIndex() { return frameIndex },
+    get startTime() { return startTime },
+    get latestFrameData() { return latestFrameData },
+    get frameTimestamps() { return frameTimestamps },
     async stop() {
       try { await cdpSession.send('Page.stopScreencast') } catch { /* ignore */ }
       // Wait for any in-progress frame writes to complete
       await Promise.all(pendingWrites)
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// Frame padding — fill gaps in screencast capture with duplicate frames
+//
+// CDP Screencast only sends frames when the compositor renders something.
+// During static pauses (no visual change), gaps appear. This function pads
+// those gaps by duplicating the last captured frame, so the video duration
+// matches the actual wall-clock recording time.
+// ---------------------------------------------------------------------------
+
+async function padFrameSequence(framesDir, capturedFrameCount, frameTimestamps, recordingStartMs, fps) {
+  if (capturedFrameCount === 0) return 0
+
+  const recordingEndMs = Date.now()
+  const totalDurationMs = recordingEndMs - recordingStartMs
+  const frameIntervalMs = 1000 / fps
+  const totalExpectedFrames = Math.ceil(totalDurationMs / frameIntervalMs)
+
+  if (totalExpectedFrames <= capturedFrameCount) return capturedFrameCount
+
+  // Rename original frames to a temp prefix
+  for (let i = capturedFrameCount; i >= 1; i--) {
+    const oldName = `frame_${padFrameNumber(i)}.png`
+    const newName = `frame_raw_${padFrameNumber(i)}.png`
+    await fs.rename(path.join(framesDir, oldName), path.join(framesDir, newName))
+  }
+
+  // Build padded sequence: for each expected frame time, use the latest captured frame
+  let capturedIdx = 0
+  for (let i = 0; i < totalExpectedFrames; i++) {
+    const targetTime = recordingStartMs + i * frameIntervalMs
+
+    // Advance capturedIdx to the last frame captured at or before targetTime
+    while (capturedIdx < capturedFrameCount - 1 && frameTimestamps[capturedIdx + 1] <= targetTime) {
+      capturedIdx += 1
+    }
+
+    const srcPath = path.join(framesDir, `frame_raw_${padFrameNumber(capturedIdx + 1)}.png`)
+    const dstPath = path.join(framesDir, `frame_${padFrameNumber(i + 1)}.png`)
+    await fs.copyFile(srcPath, dstPath)
+  }
+
+  // Clean up raw frames
+  for (let i = 1; i <= capturedFrameCount; i++) {
+    await fs.unlink(path.join(framesDir, `frame_raw_${padFrameNumber(i)}.png`)).catch(() => {})
+  }
+
+  return totalExpectedFrames
 }
 
 // ---------------------------------------------------------------------------
@@ -608,6 +666,17 @@ async function startFrameRenderedRecording({
       : 1
     onProgress(`Studio pacing -> actionScale=${clampedPaceScale.toFixed(2)}x`)
 
+    // Real-time preview streaming — send frames to the renderer during recording
+    let previewInterval = null
+    if (onProgress) {
+      previewInterval = setInterval(() => {
+        const frameData = screencast.latestFrameData
+        if (frameData) {
+          onProgress(`__preview_frame__:${frameData}`)
+        }
+      }, 100)  // ~10 fps preview stream
+    }
+
     // Execute all steps in real-time — every frame is captured
     for (let index = 0; index < steps.length; index += 1) {
       await executeRealtimeStep(
@@ -628,16 +697,29 @@ async function startFrameRenderedRecording({
     }
 
     // Stop capturing
+    if (previewInterval) clearInterval(previewInterval)
     await screencast.stop()
-    onProgress(`Captured ${screencast.frameIndex} compositor frames`)
+
+    const capturedFrameCount = screencast.frameIndex
+    onProgress(`Captured ${capturedFrameCount} compositor frames`)
 
     // Wait briefly for any pending frame writes to flush
     await page.waitForTimeout(200)
 
-    // Now encode the captured frames
-    const frameCount = screencast.frameIndex
+    // Pad frame sequence — fill gaps where compositor didn't render
+    // (static pauses) with duplicate frames so video duration = wall-clock time
+    onProgress('Padding frame sequence to match wall-clock duration...')
+    const paddedFrameCount = await padFrameSequence(
+      framesDir,
+      capturedFrameCount,
+      screencast.frameTimestamps,
+      screencast.startTime,
+      fps,
+    )
+
+    const frameCount = paddedFrameCount
     const actualDurationSec = frameCount / fps
-    onProgress(`Studio captured ${frameCount} frames -> ${actualDurationSec.toFixed(2)}s at ${fps}fps`)
+    onProgress(`Studio final -> ${frameCount} frames (${capturedFrameCount} captured + ${frameCount - capturedFrameCount} padded) -> ${actualDurationSec.toFixed(2)}s at ${fps}fps`)
 
     const subjectCenter = await findSubjectCenter(page)
     if (subjectCenter) {
