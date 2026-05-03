@@ -130,19 +130,6 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
 
   const fullDuration = duration + 130 + correctMs
 
-  // Dispatch mouseout on previous element
-  await page.evaluate(() => {
-    const pos = window.__flowcapCursorPosition
-    if (pos) {
-      const el = document.elementFromPoint(pos.x, pos.y)
-      if (el) {
-        el.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }))
-        el.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
-      }
-    }
-  })
-  await page.mouse.move(0, 0)
-
   // Use requestAnimationFrame for real-time cursor animation
   await page.evaluate(
     ({ fromX, fromY, cx1, cy1, cx2, cy2, toX, toY, durationMs, fullDurationMs, dist: d, sJ, sV, sT, doOvershoot, overX, overY, correctMs: corrMs }) => {
