@@ -101,7 +101,7 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
   const distance = Math.hypot(targetX - previous.x, targetY - previous.y)
   const paceScale = Number.parseFloat(cursor?.paceScale) || 1
   const speed = Number.parseFloat(cursor?.speed) || 450
-  const baseDur = Math.max(Math.round((distance / speed) * 1000), 350)
+  const baseDur = Math.max(Math.round((distance / speed) * 1000), 500)
   const duration = clamp(
     Math.round(baseDur * paceScale * (0.88 + Math.random() * 0.24)), 250, 4000,
   )
@@ -177,11 +177,11 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
         const t = Math.min(elapsed / durationMs, 1)
 
         let bezT
-        if (t < 0.58) {
-          bezT = Math.pow(t / 0.58, 1.7) * 0.82
+        if (t < 0.45) {
+          bezT = Math.pow(t / 0.45, 1.7) * 0.65
         } else {
-          const p = (t - 0.58) / 0.42
-          bezT = 0.82 + (1 - Math.pow(1 - p, 2.1)) * 0.18
+          const p = (t - 0.45) / 0.55
+          bezT = 0.65 + (1 - Math.pow(1 - p, 2.1)) * 0.35
         }
         bezT += fbm(t * 5 + 0.3, sV) * 0.08 * Math.sin(Math.PI * t)
         bezT = Math.max(0, Math.min(bezT, 1))
@@ -193,15 +193,15 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
         pos.x += nX * j
         pos.y += nY * j
 
-        if (t > 0.82) {
-          const p = (t - 0.82) / 0.18
+        if (t > 0.75) {
+          const p = (t - 0.75) / 0.25
           const amp = (1 - p) * Math.min(d * 0.009, 5.5)
           pos.x += Math.sin(p * 6 * Math.PI) * amp
           pos.y += Math.cos(p * 7 * Math.PI) * amp * 0.6
         }
 
-        if (doOvershoot && t > 0.85 && elapsed < durationMs) {
-          const overT = (t - 0.85) / 0.15
+        if (doOvershoot && t > 0.80 && elapsed < durationMs) {
+          const overT = (t - 0.80) / 0.20
           pos.x += (overX - toX) * overT * overT
           pos.y += (overY - toY) * overT * overT
         }
@@ -353,8 +353,8 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       const tp = await getLocatorInteractionPoint(locator)
       if (tp) await locator.hover({ position: { x: tp.offsetX, y: tp.offsetY } })
       else await locator.hover()
-      // Human hover dwell
-      await page.waitForTimeout(500 + Math.round(Math.random() * 400))
+      // Human hover dwell — longer pause to observe before moving on
+      await page.waitForTimeout(800 + Math.round(Math.random() * 600))
       return
     }
     case 'click': {
@@ -362,8 +362,8 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await locator.waitFor({ state: 'visible', timeout: 5000 })
       await waitForStableLocatorRealtime(locator, page)
       await moveRealtimeCursorToLocator(page, locator, cursor)
-      // Human dwell before clicking
-      await page.waitForTimeout(400 + Math.round(Math.random() * 300))
+      // Human dwell before clicking — absorb the target
+      await page.waitForTimeout(500 + Math.round(Math.random() * 400))
       await pulseShowcaseCursor(page, cursor)
 
       if (
@@ -388,7 +388,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await page.mouse.move(0, 0)
 
       // Settle time — let the user see the result
-      await page.waitForTimeout(900 + Math.round(Math.random() * 600))
+      await page.waitForTimeout(1200 + Math.round(Math.random() * 800))
       return
     }
     case 'type': {
@@ -612,6 +612,16 @@ async function startFrameRenderedRecording({
         interaction,
         onProgress,
       )
+
+      // Inter-step "thinking" gap — a real human pauses to decide what's next
+      if (index < steps.length - 1) {
+        const nextAction = steps[index + 1]?.action
+        // Longer gap after clicks (decision made), shorter after waits/hovers
+        const gapMs = (nextAction === 'click' || nextAction === 'hover')
+          ? 400 + Math.round(Math.random() * 400)   // 400-800ms
+          : 200 + Math.round(Math.random() * 200)   // 200-400ms
+        await page.waitForTimeout(gapMs)
+      }
     }
 
     // Stop capturing
