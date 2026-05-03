@@ -1,4 +1,3 @@
-const path = require('path')
 const fs = require('fs/promises')
 const { installShowcaseCursor } = require('./cursor')
 const {
@@ -341,7 +340,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       if (tp) await locator.hover({ position: { x: tp.offsetX, y: tp.offsetY } })
       else await locator.hover()
       // Human hover dwell — longer pause to observe before moving on
-      await page.waitForTimeout(1700 + Math.round(Math.random() * 800))
+      await page.waitForTimeout(2200 + Math.round(Math.random() * 800))
       return
     }
     case 'click': {
@@ -350,7 +349,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await waitForStableLocatorRealtime(locator, page)
       await moveRealtimeCursorToLocator(page, locator, cursor)
       // Human dwell before clicking — absorb the target
-      await page.waitForTimeout(1700 + Math.round(Math.random() * 600))
+      await page.waitForTimeout(2200 + Math.round(Math.random() * 600))
       await pulseShowcaseCursor(page, cursor)
 
       if (
@@ -375,7 +374,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await page.mouse.move(0, 0)
 
       // Settle time — let the user see the result
-      await page.waitForTimeout(2000 + Math.round(Math.random() * 1000))
+      await page.waitForTimeout(2500 + Math.round(Math.random() * 1000))
       return
     }
     case 'type': {
@@ -426,7 +425,7 @@ async function encodeFrameSequence({ framesDir, rawVideoPath, fps, render, onPro
   const motionBlurRaw = parseInt(render?.motionBlur, 10)
   const blurFrames = Number.isFinite(motionBlurRaw) && motionBlurRaw >= 0
     ? Math.min(motionBlurRaw, 5)
-    : 1
+    : 0  // no motion blur by default
 
   if (blurFrames > 0) {
     const half = Math.floor(blurFrames / 2)
@@ -605,8 +604,8 @@ async function startFrameRenderedRecording({
         const nextAction = steps[index + 1]?.action
         // Longer gap before clicks/hovers (thinking what to do), shorter before waits
         const gapMs = (nextAction === 'click' || nextAction === 'hover')
-          ? 1400 + Math.round(Math.random() * 600)   // 1400-2000ms
-          : 1000 + Math.round(Math.random() * 300)   // 1000-1300ms
+          ? 1900 + Math.round(Math.random() * 600)   // 1900-2500ms
+          : 1500 + Math.round(Math.random() * 300)   // 1500-1800ms
         await page.waitForTimeout(gapMs)
       }
     }
