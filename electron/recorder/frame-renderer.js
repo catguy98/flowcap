@@ -341,7 +341,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       if (tp) await locator.hover({ position: { x: tp.offsetX, y: tp.offsetY } })
       else await locator.hover()
       // Human hover dwell — longer pause to observe before moving on
-      await page.waitForTimeout(800 + Math.round(Math.random() * 600))
+      await page.waitForTimeout(1000 + Math.round(Math.random() * 800))
       return
     }
     case 'click': {
@@ -350,7 +350,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await waitForStableLocatorRealtime(locator, page)
       await moveRealtimeCursorToLocator(page, locator, cursor)
       // Human dwell before clicking — absorb the target
-      await page.waitForTimeout(500 + Math.round(Math.random() * 400))
+      await page.waitForTimeout(700 + Math.round(Math.random() * 500))
       await pulseShowcaseCursor(page, cursor)
 
       if (
@@ -375,7 +375,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await page.mouse.move(0, 0)
 
       // Settle time — let the user see the result
-      await page.waitForTimeout(1200 + Math.round(Math.random() * 800))
+      await page.waitForTimeout(1500 + Math.round(Math.random() * 1000))
       return
     }
     case 'type': {
@@ -603,10 +603,10 @@ async function startFrameRenderedRecording({
       // Inter-step "thinking" gap — a real human pauses to decide what's next
       if (index < steps.length - 1) {
         const nextAction = steps[index + 1]?.action
-        // Longer gap after clicks (decision made), shorter after waits/hovers
+        // Longer gap before clicks/hovers (thinking what to do), shorter before waits
         const gapMs = (nextAction === 'click' || nextAction === 'hover')
-          ? 400 + Math.round(Math.random() * 400)   // 400-800ms
-          : 200 + Math.round(Math.random() * 200)   // 200-400ms
+          ? 600 + Math.round(Math.random() * 600)   // 600-1200ms
+          : 400 + Math.round(Math.random() * 300)   // 400-700ms
         await page.waitForTimeout(gapMs)
       }
     }
