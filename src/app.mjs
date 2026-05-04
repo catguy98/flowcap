@@ -5,6 +5,62 @@ import { createMotionEditor } from './ui/motion-editor.mjs'
 import { createPreviewRenderer } from './ui/preview.mjs'
 import { createStepRenderer } from './ui/steps.mjs'
 
+// ---------------------------------------------------------------------------
+// Live Preview — uses Electron desktopCapturer to mirror the recording browser
+// window in real-time. Zero screenshots, zero IPC frame transfers — just a
+// WebRTC video stream from the OS window capture.
+// ---------------------------------------------------------------------------
+
+let livePreviewStream = null
+let livePreviewPollTimer = null
+
+async function startLivePreview() {
+  // Poll for the recording browser window (it takes a moment to appear)
+  livePreviewPollTimer = setInterval(async () => {
+    try {
+      const result = await window.api.getRecordingWindow()
+      if (!result.found) return
+
+      // Found it — stop polling and start streaming
+      clearInterval(livePreviewPollTimer)
+      livePreviewPollTimer = null
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: result.sourceId,
+          },
+        },
+      })
+
+      livePreviewStream = stream
+      const video = elements.livePreviewVideo
+      video.srcObject = stream
+      video.hidden = false
+      await video.play()
+      appendLog('Live preview connected — streaming recording window')
+    } catch (err) {
+      appendLog(`Live preview: ${err.message}`)
+    }
+  }, 500)
+}
+
+function stopLivePreview() {
+  if (livePreviewPollTimer) {
+    clearInterval(livePreviewPollTimer)
+    livePreviewPollTimer = null
+  }
+  if (livePreviewStream) {
+    livePreviewStream.getTracks().forEach(t => t.stop())
+    livePreviewStream = null
+  }
+  const video = elements.livePreviewVideo
+  video.srcObject = null
+  video.hidden = true
+}
+
 const state = {
   currentSteps: [],
   detectedTargets: [],
@@ -415,6 +471,9 @@ async function start() {
     appendLog(msg)
   })
 
+  // Start live preview — polls for the recording browser window then streams it
+  startLivePreview()
+
   const result = await window.api.startRecording({
     url,
     urlSlug,
@@ -447,6 +506,7 @@ async function start() {
   })
 
   window.api.removeProgressListener()
+  stopLivePreview()
 
   if (result.success) {
     const entry = document.createElement('div')

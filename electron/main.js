@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, desktopCapturer, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 
@@ -157,6 +157,21 @@ ipcMain.handle('analyze-url', async (event, { url }) => {
 
 ipcMain.handle('render-preview-state', async (event, { url, steps, timeMs, browserConfig }) => {
   return await renderPreviewState(url, steps, timeMs, browserConfig);
+});
+
+// Find the recording browser window by its unique title for live preview.
+// The recording browser sets its title to "flowcap-rec-<timestamp>".
+ipcMain.handle('get-recording-window', async () => {
+  try {
+    const sources = await desktopCapturer.getSources({ types: ['window'] });
+    const recWindow = sources.find(s => s.name.startsWith('flowcap-rec-'));
+    if (recWindow) {
+      return { found: true, sourceId: recWindow.id, name: recWindow.name };
+    }
+    return { found: false };
+  } catch (err) {
+    return { found: false, error: err.message };
+  }
 });
 
 ipcMain.handle('start-recording', async (event, { url, urlSlug, steps, durationSec, bgColor, bgImagePath, borderRadius, zoomPercent, camera, quality, browserConfig, placement, cursor, interaction, mockup, motion, render }) => {

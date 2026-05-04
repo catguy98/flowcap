@@ -14,5 +14,6 @@ contextBridge.exposeInMainWorld('api', {
   minimizeWindow: () => ipcRenderer.send('minimize-window'),
   toggleMaximizeWindow: () => ipcRenderer.send('toggle-maximize-window'),
   analyzeUrl: (url) => ipcRenderer.invoke('analyze-url', { url }),
+  getRecordingWindow: () => ipcRenderer.invoke('get-recording-window'),
   openFile: (filePath) => ipcRenderer.invoke('open-file', filePath)
 });

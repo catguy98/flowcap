@@ -600,8 +600,10 @@ async function startFrameRenderedRecording({
   try {
     onProgress(`Studio Render (CDP Screencast) -> browser=${browserConfig.width}x${browserConfig.height} fps=${fps}`)
 
+    const recordingWindowId = `flowcap-rec-${renderId}`
+
     browser = await chromium.launch({
-      headless: true,
+      headless: false,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -617,6 +619,7 @@ async function startFrameRenderedRecording({
     })
 
     page = await context.newPage()
+    await page.evaluate((wid) => { document.title = wid }, recordingWindowId)
 
     // Create CDP session for screencast
     cdpSession = await context.newCDPSession(page)
