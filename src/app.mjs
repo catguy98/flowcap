@@ -411,18 +411,8 @@ async function start() {
   elements.statusLog.innerHTML = ''
   appendLog('Starting output engine...')
 
-  // Switch to preview tab so user sees the live recording
-  elements.tabPreview.click()
-
   window.api.onProgress((msg) => {
     appendLog(msg)
-  })
-
-  // Stream real-time preview frames during recording
-  window.api.onPreviewFrame((base64Data) => {
-    const dataUrl = `data:image/png;base64,${base64Data}`
-    state.preview.snapshotDataUrl = dataUrl
-    updatePreview()
   })
 
   const result = await window.api.startRecording({

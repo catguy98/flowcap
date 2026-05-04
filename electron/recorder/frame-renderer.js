@@ -666,23 +666,6 @@ async function startFrameRenderedRecording({
       : 1
     onProgress(`Studio pacing -> actionScale=${clampedPaceScale.toFixed(2)}x`)
 
-    // Real-time preview streaming — uses a SEPARATE CDP session so it doesn't
-    // conflict with the screencast capture. Takes small JPEG screenshots and
-    // sends them to the renderer via IPC.
-    let previewSession = null
-    let previewInterval = null
-    if (onProgress) {
-      previewSession = await context.newCDPSession(page)
-      previewInterval = setInterval(async () => {
-        try {
-          const { data } = await previewSession.send('Page.captureScreenshot', {
-            format: 'jpeg',
-            quality: 25,
-          })
-          onProgress(`__preview_frame__:${data}`)
-        } catch { /* session may be busy or closed */ }
-      }, 500)  // ~2 fps preview
-    }
 
     // Execute all steps in real-time — every frame is captured
     for (let index = 0; index < steps.length; index += 1) {
@@ -704,7 +687,6 @@ async function startFrameRenderedRecording({
     }
 
     // Stop capturing
-    if (previewInterval) clearInterval(previewInterval)
     await screencast.stop()
 
     const capturedFrameCount = screencast.frameIndex
