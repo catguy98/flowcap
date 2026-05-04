@@ -62,5 +62,4 @@ export const elements = {
   motionBridgeStatusEl: document.getElementById('motionBridgeStatus'),
   motionPlayPauseBtn: document.getElementById('motionPlayPauseBtn'),
   motionResetBtn: document.getElementById('motionResetBtn'),
-  livePreviewVideo: document.getElementById('livePreviewVideo'),
 }
