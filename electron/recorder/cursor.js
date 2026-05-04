@@ -180,7 +180,7 @@ async function moveShowcaseCursorToLocator(page, locator, cursor, options = {}) 
   const baseDur = options.duration ?? Math.max(Math.round((distance / speed) * 1000), 120)
   // ±12% duration variance — no two moves feel identical
   const duration = options.duration ?? clamp(
-    Math.round(baseDur * (0.88 + Math.random() * 0.24)), 100, 3000,
+    Math.round(baseDur * (0.88 + Math.random() * 0.24)), 100, 1500,
   )
   const steps = clamp(Math.round(duration / 16), 6, 30)
 

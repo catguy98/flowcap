@@ -159,9 +159,9 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
   const distance = Math.hypot(targetX - previous.x, targetY - previous.y)
   const paceScale = Number.parseFloat(cursor?.paceScale) || 1
   const speed = Number.parseFloat(cursor?.speed) || 450
-  const baseDur = Math.max(Math.round((distance / speed) * 1000), 500)
+  const baseDur = Math.max(Math.round((distance / speed) * 1000), 200)
   const duration = clamp(
-    Math.round(baseDur * paceScale * (0.88 + Math.random() * 0.24)), 250, 4000,
+    Math.round(baseDur * paceScale * (0.88 + Math.random() * 0.24)), 150, 1500,
   )
 
   const dx = targetX - previous.x
@@ -186,7 +186,7 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
   const overshootY = targetY + (dy / dist) * overshootPx
   const correctMs = doOvershoot ? (80 + Math.random() * 60) : 0
 
-  const fullDuration = duration + 130 + correctMs
+  const fullDuration = duration + 60 + correctMs
 
   // Use requestAnimationFrame for real-time cursor animation
   await page.evaluate(
@@ -395,13 +395,11 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await locator.waitFor({ state: 'visible', timeout: 5000 })
       await waitForStableLocatorRealtime(locator, page, { timeoutMs: 200, stableMs: 40 })
       await moveRealtimeCursorToLocator(page, locator, cursor)
-      // Pre-hover thinking — cursor is at target, pausing before triggering hover
-      await page.waitForTimeout(1000 + Math.round(Math.random() * 1000))
       const tp = await getLocatorInteractionPoint(locator)
       if (tp) await locator.hover({ position: { x: tp.offsetX, y: tp.offsetY } })
       else await locator.hover()
-      // Human hover dwell — observe the hover state before moving on
-      await page.waitForTimeout(1000 + Math.round(Math.random() * 1000))
+      // Hover dwell
+      await page.waitForTimeout(800 + Math.round(Math.random() * 700))
       return
     }
     case 'click': {
@@ -409,8 +407,6 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await locator.waitFor({ state: 'visible', timeout: 5000 })
       await waitForStableLocatorRealtime(locator, page)
       await moveRealtimeCursorToLocator(page, locator, cursor)
-      // Human dwell before clicking — absorb the target
-      await page.waitForTimeout(1000 + Math.round(Math.random() * 1000))
       await pulseShowcaseCursor(page, cursor)
 
       if (
@@ -434,7 +430,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
 
       await page.mouse.move(0, 0)
 
-      // Settle time — let the user see the result
+      // Settle time — let the user see the result (1-2s total for this step)
       await page.waitForTimeout(1000 + Math.round(Math.random() * 1000))
       return
     }
@@ -680,8 +676,8 @@ async function startFrameRenderedRecording({
       // Inter-step "thinking" gap — a real human pauses to decide what's next
       if (index < steps.length - 1) {
         const nextAction = steps[index + 1]?.action
-        // Inter-step thinking gap
-        const gapMs = 1000 + Math.round(Math.random() * 1000)   // 1-2s
+        // Inter-step thinking gap (short — the settle inside the step handles the main pause)
+        const gapMs = 200 + Math.round(Math.random() * 300)
         await page.waitForTimeout(gapMs)
       }
     }
