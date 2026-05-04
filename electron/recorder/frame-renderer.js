@@ -666,15 +666,17 @@ async function startFrameRenderedRecording({
       : 1
     onProgress(`Studio pacing -> actionScale=${clampedPaceScale.toFixed(2)}x`)
 
-    // Real-time preview streaming — send frames to the renderer during recording
+    // Real-time preview streaming — small JPEG screenshots sent to renderer.
+    // We can't use the full CDP screencast PNG frames (~2-5MB each) because
+    // that would choke IPC. Instead, take small JPEG screenshots (~30-50KB).
     let previewInterval = null
     if (onProgress) {
-      previewInterval = setInterval(() => {
-        const frameData = screencast.latestFrameData
-        if (frameData) {
-          onProgress(`__preview_frame__:${frameData}`)
-        }
-      }, 100)  // ~10 fps preview stream
+      previewInterval = setInterval(async () => {
+        try {
+          const jpegBuf = await page.screenshot({ type: 'jpeg', quality: 35, scale: 'css' })
+          onProgress(`__preview_frame__:${jpegBuf.toString('base64')}`)
+        } catch { /* page may be navigating or closed */ }
+      }, 333)  // ~3 fps preview — lightweight
     }
 
     // Execute all steps in real-time — every frame is captured
