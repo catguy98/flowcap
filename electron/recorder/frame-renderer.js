@@ -396,12 +396,12 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await waitForStableLocatorRealtime(locator, page, { timeoutMs: 200, stableMs: 40 })
       await moveRealtimeCursorToLocator(page, locator, cursor)
       // Pre-hover thinking — cursor is at target, pausing before triggering hover
-      await page.waitForTimeout(500 + Math.round(Math.random() * 500))
+      await page.waitForTimeout(200 + Math.round(Math.random() * 200))
       const tp = await getLocatorInteractionPoint(locator)
       if (tp) await locator.hover({ position: { x: tp.offsetX, y: tp.offsetY } })
       else await locator.hover()
       // Human hover dwell — observe the hover state before moving on
-      await page.waitForTimeout(500 + Math.round(Math.random() * 500))
+      await page.waitForTimeout(200 + Math.round(Math.random() * 200))
       return
     }
     case 'click': {
@@ -410,7 +410,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await waitForStableLocatorRealtime(locator, page)
       await moveRealtimeCursorToLocator(page, locator, cursor)
       // Human dwell before clicking — absorb the target
-      await page.waitForTimeout(500 + Math.round(Math.random() * 500))
+      await page.waitForTimeout(200 + Math.round(Math.random() * 200))
       await pulseShowcaseCursor(page, cursor)
 
       if (
@@ -435,7 +435,7 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await page.mouse.move(0, 0)
 
       // Settle time — let the user see the result
-      await page.waitForTimeout(500 + Math.round(Math.random() * 500))
+      await page.waitForTimeout(200 + Math.round(Math.random() * 200))
       return
     }
     case 'type': {
@@ -635,7 +635,7 @@ async function startFrameRenderedRecording({
     }
 
     // Wait for page to settle
-    await page.waitForTimeout(1000)
+    await page.waitForTimeout(500)
 
     await installShowcaseCursor(page, cursor)
     await installMotionTimeline(page, motion)
@@ -681,7 +681,7 @@ async function startFrameRenderedRecording({
       if (index < steps.length - 1) {
         const nextAction = steps[index + 1]?.action
         // Inter-step thinking gap
-        const gapMs = 500 + Math.round(Math.random() * 500)   // 500-1000ms
+        const gapMs = 200 + Math.round(Math.random() * 300)   // 200-500ms
         await page.waitForTimeout(gapMs)
       }
     }

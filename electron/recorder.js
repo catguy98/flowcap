@@ -102,8 +102,8 @@ async function startRecording(
 
   onProgress(`Navigating to ${url}...`)
   await page.goto(url, { waitUntil: 'load' })
-  await page.waitForTimeout(1000)
-  const PAGE_LOAD_TRIM_SEC = 1.5  // skip the loading screen from the output
+  await page.waitForTimeout(500)
+  const PAGE_LOAD_TRIM_SEC = 1.0  // skip the loading screen from the output
   onProgress(
     `Capture source -> viewport=${browserConfig.width}x${browserConfig.height} video=${recordVideoSize.width}x${recordVideoSize.height}${requestedCaptureScale > 1 ? ` (requested scale ${requestedCaptureScale} ignored for Playwright video stability)` : ''}`,
   )
