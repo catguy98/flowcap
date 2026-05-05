@@ -188,6 +188,14 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
 
   const fullDuration = duration + 60 + correctMs
 
+  // Reset cursor to arrow at the start of movement (don't travel as pointer)
+  await page.evaluate(() => {
+    const el = document.getElementById('flowcap-showcase-cursor')
+    if (!el) return
+    el.classList.remove('is-pointer', 'is-dot')
+    el.classList.add('is-arrow')
+  })
+
   // Use requestAnimationFrame for real-time cursor animation
   await page.evaluate(
     ({ fromX, fromY, cx1, cy1, cx2, cy2, toX, toY, durationMs, fullDurationMs, dist: d, sJ, sV, sT, doOvershoot, overX, overY, correctMs: corrMs }) => {
@@ -270,10 +278,12 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
 
         cursorEl.style.setProperty('--flowcap-x', pos.x.toFixed(2))
         cursorEl.style.setProperty('--flowcap-y', pos.y.toFixed(2))
+        window.__flowcapCursorPos = { x: pos.x, y: pos.y }
 
         if (elapsed >= fullDurationMs) {
           cursorEl.style.setProperty('--flowcap-x', String(toX))
           cursorEl.style.setProperty('--flowcap-y', String(toY))
+          window.__flowcapCursorPos = { x: toX, y: toY }
           window.__flowcapCursorPosition = { x: toX, y: toY }
           return true // animation complete
         }
@@ -298,11 +308,16 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
     },
   )
 
-  // Wait for the full cursor animation to play out in real time
-  await page.waitForTimeout(fullDuration)
-
-  // Move native mouse to target
-  await page.mouse.move(targetX, targetY)
+  // Continuously sync native mouse to visual cursor position so hover states
+  // update in real-time as the cursor moves across the page.
+  // Uses wall-clock time to avoid drift from IPC round-trip overhead.
+  const syncIntervalMs = 50
+  const syncStart = Date.now()
+  while (Date.now() - syncStart < fullDuration) {
+    await page.waitForTimeout(syncIntervalMs)
+    const pos = await page.evaluate(() => window.__flowcapCursorPos)
+    if (pos) await page.mouse.move(pos.x, pos.y)
+  }
 
   // Dynamic cursor: switch to pointer over clickable targets
   const needsPointer = await locator.evaluate((el) => {
@@ -321,7 +336,7 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
   await page.evaluate((isPointer) => {
     const el = document.getElementById('flowcap-showcase-cursor')
     if (!el) return
-    el.classList.remove('is-arrow', 'is-dot')
+    el.classList.remove('is-pointer', 'is-arrow', 'is-dot')
     el.classList.add(isPointer ? 'is-pointer' : 'is-arrow')
   }, needsPointer)
 
@@ -330,12 +345,70 @@ async function moveRealtimeCursorToLocator(page, locator, cursor) {
 }
 
 // ---------------------------------------------------------------------------
+// Micro-jitter — tiny random movement before hover to feel human
+//
+// Even when the cursor is already over the target, real users never hold
+// perfectly still. This adds a small 2-6px displacement and return, taking
+// ~150-250ms, so the cursor looks alive before the hover triggers.
+// ---------------------------------------------------------------------------
+
+async function microJitter(page, cursor) {
+  if (!cursor?.enabled) return
+
+  const jitterPx = 1 + Math.random() * 2   // 1-3px displacement
+  const angle = Math.random() * Math.PI * 2
+  const dx = Math.cos(angle) * jitterPx
+  const dy = Math.sin(angle) * jitterPx
+  const durationMs = 120 + Math.round(Math.random() * 60)  // 120-180ms
+
+  await page.evaluate(({ dx, dy, durationMs }) => {
+    const cursorEl = document.getElementById('flowcap-showcase-cursor')
+    if (!cursorEl) return
+
+    const currentX = parseFloat(cursorEl.style.getPropertyValue('--flowcap-x')) || 0
+    const currentY = parseFloat(cursorEl.style.getPropertyValue('--flowcap-y')) || 0
+
+    const startTime = performance.now()
+
+    function update() {
+      const elapsed = performance.now() - startTime
+      const t = Math.min(elapsed / durationMs, 1)
+
+      // Move out then back — sine arc (out and back smoothly)
+      const ease = Math.sin(Math.PI * t)
+      const x = currentX + dx * ease
+      const y = currentY + dy * ease
+
+      cursorEl.style.setProperty('--flowcap-x', x.toFixed(2))
+      cursorEl.style.setProperty('--flowcap-y', y.toFixed(2))
+
+      if (t >= 1) {
+        // Return to exact original position
+        cursorEl.style.setProperty('--flowcap-x', currentX.toFixed(2))
+        cursorEl.style.setProperty('--flowcap-y', currentY.toFixed(2))
+        return true
+      }
+      return false
+    }
+
+    if (window.__flowcapCursorRAF) cancelAnimationFrame(window.__flowcapCursorRAF)
+    function loop() {
+      if (!update()) window.__flowcapCursorRAF = requestAnimationFrame(loop)
+    }
+    window.__flowcapCursorRAF = requestAnimationFrame(loop)
+  }, { dx, dy, durationMs })
+
+  // Wait for jitter animation to complete
+  await page.waitForTimeout(durationMs + 20)
+}
+
+// ---------------------------------------------------------------------------
 // Step execution — real-time waits, no virtual clock
 // ---------------------------------------------------------------------------
 
 async function waitForStableLocatorRealtime(locator, page, options = {}) {
-  const timeoutMs = options.timeoutMs ?? 1200
-  const stableMs = options.stableMs ?? 160
+  const timeoutMs = options.timeoutMs ?? 400
+  const stableMs = options.stableMs ?? 80
   const threshold = options.threshold ?? 0.75
   const startedAt = Date.now()
   let lastBox = null
@@ -395,11 +468,11 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       await locator.waitFor({ state: 'visible', timeout: 5000 })
       await waitForStableLocatorRealtime(locator, page, { timeoutMs: 200, stableMs: 40 })
       await moveRealtimeCursorToLocator(page, locator, cursor)
+      // Micro-jitter so cursor feels alive even when already over the target
+      await microJitter(page, cursor)
       const tp = await getLocatorInteractionPoint(locator)
       if (tp) await locator.hover({ position: { x: tp.offsetX, y: tp.offsetY } })
       else await locator.hover()
-      // Hover dwell
-      await page.waitForTimeout(800 + Math.round(Math.random() * 700))
       return
     }
     case 'click': {
@@ -429,9 +502,6 @@ async function executeRealtimeStep(page, step, cursor, interaction, onProgress) 
       }
 
       await page.mouse.move(0, 0)
-
-      // Settle time — let the user see the result (1-2s total for this step)
-      await page.waitForTimeout(1000 + Math.round(Math.random() * 1000))
       return
     }
     case 'type': {
@@ -673,14 +743,15 @@ async function startFrameRenderedRecording({
         onProgress,
       )
 
-      // Inter-step "thinking" gap — a real human pauses to decide what's next
+      // Brief pause between steps
       if (index < steps.length - 1) {
-        const nextAction = steps[index + 1]?.action
-        // Inter-step thinking gap (short — the settle inside the step handles the main pause)
-        const gapMs = 200 + Math.round(Math.random() * 300)
-        await page.waitForTimeout(gapMs)
+        await page.waitForTimeout(200 + Math.round(Math.random() * 200))
       }
     }
+
+    // Hold on the final screen for 3 seconds
+    onProgress('Holding on final screen...')
+    await page.waitForTimeout(3000)
 
     // Stop capturing
     await screencast.stop()

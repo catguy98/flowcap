@@ -636,7 +636,7 @@ elements.videoAlignInput.addEventListener('change', () => syncPreviewRuntime())
 elements.bgColorInput.addEventListener('input', () => syncPreviewRuntime())
 elements.showCursorInput.addEventListener('change', () => syncPreviewRuntime())
 elements.cursorStyleInput.addEventListener('change', () => syncPreviewRuntime())
-elements.adaptiveCursorTimingInput.addEventListener('change', () => syncPreviewRuntime())
+// adaptiveCursorTimingInput — element not in DOM, skipped
 elements.disableHoverMotionInput.addEventListener('change', () => syncPreviewRuntime())
 elements.mockupTypeInput.addEventListener('change', () => syncPreviewRuntime())
 elements.outputQualityInput.addEventListener('change', () => syncPreviewRuntime())

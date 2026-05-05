@@ -78,7 +78,7 @@ async function installShowcaseCursor(page, cursor) {
         content: '';
         position: absolute;
         inset: 0;
-        background-image: url("data:image/svg+xml,%3Csvg version='1.1' xmlns='http://www.w3.org/2000/svg' width='32px' height='32px' viewBox='0 0 32 32'%3E%3Cg%3E%3Cpath fill='%23FFFFFF' d='M11.861,13.31c0.48-0.179,1.427-0.069,1.677,0.474c0.213,0.461,0.396,1.24,0.406,1.074 c0.024-0.369-0.024-6.167,0.137-6.584c0.117-0.304,0.347-0.59,0.686-0.691c0.285-0.086,0.621-0.115,0.917-0.055 c0.312,0.064,0.642,0.287,0.765,0.499c0.362,0.623,0.368,6.899,0.385,6.831c0.064-0.271,0.07-1.229,0.283-1.584 c0.141-0.234,0.497-0.445,0.688-0.479c0.294-0.053,0.655-0.068,0.964-0.008c0.249,0.049,0.586,0.344,0.677,0.486 c0.219,0.344,0.342,1.316,0.379,1.658c0.016,0.141,0.074-0.393,0.293-0.736c0.406-0.639,1.844-0.763,1.898,0.639 c0.025,0.654,0.02,0.625,0.02,1.064c0,0.516-0.012,0.828-0.04,1.203c-0.03,0.398-0.116,1.303-0.241,1.742 c-0.086,0.301-0.371,0.977-0.652,1.383c0,0-1.074,1.25-1.191,1.812s-0.078,0.566-0.102,0.965s0.121,0.924,0.121,0.924 s-0.802,0.104-1.234,0.033c-0.391-0.062-0.875-0.84-1-1.078c-0.172-0.328-0.539-0.266-0.682-0.023 c-0.225,0.383-0.709,1.07-1.051,1.113c-0.669,0.084-2.055,0.031-3.14,0.02c0,0,0.185-1.01-0.227-1.357 c-0.305-0.26-0.83-0.783-1.144-1.061l-0.832-0.92c-0.283-0.359-1.002-0.93-1.243-1.984c-0.213-0.938-0.192-1.396,0.037-1.771 c0.232-0.381,0.67-0.589,0.854-0.625c0.208-0.042,0.692-0.039,0.875,0.062c0.223,0.123,0.313,0.158,0.488,0.391 c0.23,0.306,0.312,0.457,0.213,0.121c-0.076-0.262-0.322-0.596-0.434-0.971c-0.109-0.36-0.401-0.942-0.38-1.525 C11.037,14.131,11.132,13.581,11.861,13.31'/%3E%3Cpath fill='none' stroke='%23010101' stroke-width='0.75' stroke-linejoin='round' d='M11.861,13.31 c0.48-0.179,1.427-0.069,1.677,0.474c0.213,0.461,0.396,1.24,0.406,1.074c0.024-0.369-0.024-6.167,0.137-6.584 c0.117-0.304,0.347-0.59,0.686-0.691c0.285-0.086,0.621-0.115,0.917-0.055c0.312,0.064,0.642,0.287,0.765,0.499 c0.362,0.623,0.368,6.899,0.385,6.831c0.064-0.271,0.07-1.229,0.283-1.584c0.141-0.234,0.497-0.445,0.688-0.479 c0.294-0.053,0.655-0.068,0.964-0.008c0.249,0.049,0.586,0.344,0.677,0.486c0.219,0.344,0.342,1.316,0.379,1.658 c0.016,0.141,0.074-0.393,0.293-0.736c0.406-0.639,1.844-0.763,1.898,0.639c0.025,0.654,0.02,0.625,0.02,1.064 c0,0.516-0.012,0.828-0.04,1.203c-0.03,0.398-0.116,1.303-0.241,1.742c-0.086,0.301-0.371,0.977-0.652,1.383 c0,0-1.074,1.25-1.191,1.812s-0.078,0.566-0.102,0.965s0.121,0.924,0.121,0.924s-0.802,0.104-1.234,0.033 c-0.391-0.062-0.875-0.84-1-1.078c-0.172-0.328-0.539-0.266-0.682-0.023c-0.225,0.383-0.709,1.07-1.051,1.113 c-0.669,0.084-2.055,0.031-3.14,0.02c0,0,0.185-1.01-0.227-1.357c-0.305-0.26-0.83-0.783-1.144-1.061l-0.832-0.92 c-0.283-0.359-1.002-0.93-1.243-1.984c-0.213-0.938-0.192-1.396,0.037-1.771c0.232-0.381,0.67-0.589,0.854-0.625 c0.208-0.042,0.692-0.039,0.875,0.062c0.223,0.123,0.313,0.158,0.488,0.391c0.23,0.306,0.312,0.457,0.213,0.121 c-0.076-0.262-0.322-0.596-0.434-0.971c-0.109-0.36-0.401-0.942-0.38-1.525C11.037,14.131,11.132,13.581,11.861,13.31z'/%3E%3Cline fill='none' stroke='%23010101' stroke-width='0.75' stroke-linecap='round' x1='18.854' y1='21.008' x2='18.854' y2='17.549'/%3E%3Cline fill='none' stroke='%23010101' stroke-width='0.75' stroke-linecap='round' x1='16.839' y1='21.02' x2='16.823' y2='17.547'/%3E%3Cline fill='none' stroke='%23010101' stroke-width='0.75' stroke-linecap='round' x1='14.843' y1='17.578' x2='14.864' y2='21.004'/%3E%3C/g%3E%3C/svg%3E");
+        background-image: url("data:image/svg+xml,%3Csvg version=%221.1%22 id=%22Layer_1%22 xmlns=%22http://www.w3.org/2000/svg%22 xmlns:xlink=%22http://www.w3.org/1999/xlink%22 x=%220px%22 y=%220px%22 viewBox=%220 0 32 32%22 enable-background=%22new 0 0 32 32%22 xml:space=%22preserve%22%3E %3Cg%3E %3Cdefs%3E %3Crect id=%22SVGID_1_%22 width=%2232%22 height=%2232%22/%3E %3C/defs%3E %3CclipPath id=%22SVGID_2_%22%3E %3Cuse xlink:href=%22%23SVGID_1_%22 overflow=%22visible%22/%3E %3C/clipPath%3E %3Cpath clip-path=%22url(%23SVGID_2_)%22 fill=%22%23FFFFFF%22 d=%22M11.3,20.4c-0.3-0.4-0.6-1.1-1.2-2c-0.3-0.5-1.2-1.5-1.5-1.9 c-0.2-0.4-0.2-0.6-0.1-1c0.1-0.6,0.7-1.1,1.4-1.1c0.5,0,1,0.4,1.4,0.7c0.2,0.2,0.5,0.6,0.7,0.8c0.2,0.2,0.2,0.3,0.4,0.5 c0.2,0.3,0.3,0.5,0.2,0.1c-0.1-0.5-0.2-1.3-0.4-2.1c-0.1-0.6-0.2-0.7-0.3-1.1c-0.1-0.5-0.2-0.8-0.3-1.3c-0.1-0.3-0.2-1.1-0.3-1.5 c-0.1-0.5-0.1-1.4,0.3-1.8c0.3-0.3,0.9-0.4,1.3-0.2c0.5,0.3,0.8,1,0.9,1.3c0.2,0.5,0.4,1.2,0.5,2c0.2,1,0.5,2.5,0.5,2.8 c0-0.4-0.1-1.1,0-1.5c0.1-0.3,0.3-0.7,0.7-0.8c0.3-0.1,0.6-0.1,0.9-0.1c0.3,0.1,0.6,0.3,0.8,0.5c0.4,0.6,0.4,1.9,0.4,1.8 c0.1-0.4,0.1-1.2,0.3-1.6c0.1-0.2,0.5-0.4,0.7-0.5c0.3-0.1,0.7-0.1,1,0c0.2,0,0.6,0.3,0.7,0.5c0.2,0.3,0.3,1.3,0.4,1.7 c0,0.1,0.1-0.4,0.3-0.7c0.4-0.6,1.8-0.8,1.9,0.6c0,0.7,0,0.6,0,1.1c0,0.5,0,0.8,0,1.2c0,0.4-0.1,1.3-0.2,1.7 c-0.1,0.3-0.4,1-0.7,1.4c0,0-1.1,1.2-1.2,1.8c-0.1,0.6-0.1,0.6-0.1,1c0,0.4,0.1,0.9,0.1,0.9s-0.8,0.1-1.2,0c-0.4-0.1-0.9-0.8-1-1.1 c-0.2-0.3-0.5-0.3-0.7,0c-0.2,0.4-0.7,1.1-1.1,1.1c-0.7,0.1-2.1,0-3.1,0c0,0,0.2-1-0.2-1.4c-0.3-0.3-0.8-0.8-1.1-1.1L11.3,20.4z%22/%3E %3Cpath clip-path=%22url(%23SVGID_2_)%22 fill=%22none%22 stroke=%22%23000000%22 stroke-width=%220.75%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 d=%22 M11.3,20.4c-0.3-0.4-0.6-1.1-1.2-2c-0.3-0.5-1.2-1.5-1.5-1.9c-0.2-0.4-0.2-0.6-0.1-1c0.1-0.6,0.7-1.1,1.4-1.1c0.5,0,1,0.4,1.4,0.7 c0.2,0.2,0.5,0.6,0.7,0.8c0.2,0.2,0.2,0.3,0.4,0.5c0.2,0.3,0.3,0.5,0.2,0.1c-0.1-0.5-0.2-1.3-0.4-2.1c-0.1-0.6-0.2-0.7-0.3-1.1 c-0.1-0.5-0.2-0.8-0.3-1.3c-0.1-0.3-0.2-1.1-0.3-1.5c-0.1-0.5-0.1-1.4,0.3-1.8c0.3-0.3,0.9-0.4,1.3-0.2c0.5,0.3,0.8,1,0.9,1.3 c0.2,0.5,0.4,1.2,0.5,2c0.2,1,0.5,2.5,0.5,2.8c0-0.4-0.1-1.1,0-1.5c0.1-0.3,0.3-0.7,0.7-0.8c0.3-0.1,0.6-0.1,0.9-0.1 c0.3,0.1,0.6,0.3,0.8,0.5c0.4,0.6,0.4,1.9,0.4,1.8c0.1-0.4,0.1-1.2,0.3-1.6c0.1-0.2,0.5-0.4,0.7-0.5c0.3-0.1,0.7-0.1,1,0 c0.2,0,0.6,0.3,0.7,0.5c0.2,0.3,0.3,1.3,0.4,1.7c0,0.1,0.1-0.4,0.3-0.7c0.4-0.6,1.8-0.8,1.9,0.6c0,0.7,0,0.6,0,1.1 c0,0.5,0,0.8,0,1.2c0,0.4-0.1,1.3-0.2,1.7c-0.1,0.3-0.4,1-0.7,1.4c0,0-1.1,1.2-1.2,1.8c-0.1,0.6-0.1,0.6-0.1,1 c0,0.4,0.1,0.9,0.1,0.9s-0.8,0.1-1.2,0c-0.4-0.1-0.9-0.8-1-1.1c-0.2-0.3-0.5-0.3-0.7,0c-0.2,0.4-0.7,1.1-1.1,1.1 c-0.7,0.1-2.1,0-3.1,0c0,0,0.2-1-0.2-1.4c-0.3-0.3-0.8-0.8-1.1-1.1L11.3,20.4z%22/%3E %3Cline clip-path=%22url(%23SVGID_2_)%22 fill=%22none%22 stroke=%22%23000000%22 stroke-width=%220.75%22 stroke-linecap=%22round%22 x1=%2219.6%22 y1=%2220.7%22 x2=%2219.6%22 y2=%2217.3%22/%3E %3Cline clip-path=%22url(%23SVGID_2_)%22 fill=%22none%22 stroke=%22%23000000%22 stroke-width=%220.75%22 stroke-linecap=%22round%22 x1=%2217.6%22 y1=%2220.7%22 x2=%2217.5%22 y2=%2217.3%22/%3E %3Cline clip-path=%22url(%23SVGID_2_)%22 fill=%22none%22 stroke=%22%23000000%22 stroke-width=%220.75%22 stroke-linecap=%22round%22 x1=%2215.6%22 y1=%2217.3%22 x2=%2215.6%22 y2=%2220.7%22/%3E %3C/g%3E %3C/svg%3E");
         background-repeat: no-repeat;
         background-position: center;
         background-size: contain;
@@ -180,7 +180,7 @@ async function moveShowcaseCursorToLocator(page, locator, cursor, options = {}) 
   const baseDur = options.duration ?? Math.max(Math.round((distance / speed) * 1000), 120)
   // ±12% duration variance — no two moves feel identical
   const duration = options.duration ?? clamp(
-    Math.round(baseDur * (0.88 + Math.random() * 0.24)), 100, 1500,
+    Math.round(baseDur * (0.88 + Math.random() * 0.24)), 100, 3000,
   )
   const steps = clamp(Math.round(duration / 16), 6, 30)
 
@@ -203,6 +203,14 @@ async function moveShowcaseCursorToLocator(page, locator, cursor, options = {}) 
   const seedT = (Math.random() * 9999) | 0
 
   const fullDuration = duration + 130
+
+  // Reset cursor to arrow at the start of movement (don't travel as pointer)
+  await page.evaluate(() => {
+    const el = document.getElementById('flowcap-showcase-cursor')
+    if (!el) return
+    el.classList.remove('is-pointer', 'is-dot')
+    el.classList.add('is-arrow')
+  })
 
   await page.evaluate(
     ({ fromX, fromY, cx1, cy1, cx2, cy2, toX, toY, durationMs, fullDurationMs, dist: d, sJ, sV, sT }) => {
@@ -302,6 +310,30 @@ async function moveShowcaseCursorToLocator(page, locator, cursor, options = {}) 
     await page.mouse.move(targetX, targetY, { steps })
   }
   await page.waitForTimeout(fullDuration)
+
+  // Switch cursor type based on target element
+  const needsPointer = await locator.evaluate((el) => {
+    const styleEl = document.getElementById('flowcap-showcase-cursor-style')
+    if (styleEl) {
+      const saved = styleEl.textContent
+      styleEl.textContent = saved.replace(/html, body, body \* \{ cursor: none !important; \}/, '')
+      void el.offsetHeight
+      var result = window.getComputedStyle(el).cursor === 'pointer'
+      styleEl.textContent = saved
+      return result
+    }
+    return window.getComputedStyle(el).cursor === 'pointer'
+  }).catch(() => false)
+
+  await page.evaluate((isPointer) => {
+    const el = document.getElementById('flowcap-showcase-cursor')
+    if (!el) return
+    el.classList.remove('is-pointer', 'is-arrow', 'is-dot')
+    el.classList.add(isPointer ? 'is-pointer' : 'is-arrow')
+  }, needsPointer)
+
+  // Brief pause so cursor type change is visible
+  await page.waitForTimeout(80)
 }
 
 async function pulseShowcaseCursor(page, cursor) {

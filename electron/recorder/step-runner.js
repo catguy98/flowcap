@@ -5,6 +5,57 @@ const {
 } = require('./cursor')
 const { applyContentZoom } = require('./motion')
 
+// ---------------------------------------------------------------------------
+// Micro-jitter — tiny random movement before hover to feel human
+// ---------------------------------------------------------------------------
+
+async function microJitter(page, cursor) {
+  if (!cursor?.enabled) return
+
+  const jitterPx = 0.5 + Math.random() * 1
+  const angle = Math.random() * Math.PI * 2
+  const dx = Math.cos(angle) * jitterPx
+  const dy = Math.sin(angle) * jitterPx
+  const durationMs = 60 + Math.round(Math.random() * 30)
+
+  await page.evaluate(({ dx, dy, durationMs }) => {
+    const cursorEl = document.getElementById('flowcap-showcase-cursor')
+    if (!cursorEl) return
+
+    const currentX = parseFloat(cursorEl.style.getPropertyValue('--flowcap-x')) || 0
+    const currentY = parseFloat(cursorEl.style.getPropertyValue('--flowcap-y')) || 0
+
+    const startTime = performance.now()
+
+    function update() {
+      const elapsed = performance.now() - startTime
+      const t = Math.min(elapsed / durationMs, 1)
+
+      const ease = Math.sin(Math.PI * t)
+      const x = currentX + dx * ease
+      const y = currentY + dy * ease
+
+      cursorEl.style.setProperty('--flowcap-x', x.toFixed(2))
+      cursorEl.style.setProperty('--flowcap-y', y.toFixed(2))
+
+      if (t >= 1) {
+        cursorEl.style.setProperty('--flowcap-x', currentX.toFixed(2))
+        cursorEl.style.setProperty('--flowcap-y', currentY.toFixed(2))
+        return true
+      }
+      return false
+    }
+
+    if (window.__flowcapCursorRAF) cancelAnimationFrame(window.__flowcapCursorRAF)
+    function loop() {
+      if (!update()) window.__flowcapCursorRAF = requestAnimationFrame(loop)
+    }
+    window.__flowcapCursorRAF = requestAnimationFrame(loop)
+  }, { dx, dy, durationMs })
+
+  await page.waitForTimeout(durationMs + 20)
+}
+
 async function waitForStableLocator(locator, page, options = {}) {
   const timeoutMs = options.timeoutMs ?? 1400
   const stableMs = options.stableMs ?? 160
@@ -67,6 +118,8 @@ async function executeStep(page, step, onProgress, runtime = {}) {
           await moveShowcaseCursorToLocator(page, locator, runtime.cursor, {
             skipNativeMouseMove: false,
           })
+          // Micro-jitter so cursor feels alive even when already over the target
+          await microJitter(page, runtime.cursor)
         } else {
           const tp = await getLocatorInteractionPoint(locator)
           if (tp) await locator.hover({ position: { x: tp.offsetX, y: tp.offsetY } })
@@ -84,7 +137,6 @@ async function executeStep(page, step, onProgress, runtime = {}) {
           })
           await pulseShowcaseCursor(page, runtime.cursor)
         }
-        await waitForStableLocator(locator, page, { timeoutMs: 900, stableMs: 100 })
         if (
           typeof step.selector === 'string' &&
           /privacy-(shared|private)-control/.test(step.selector)
@@ -107,7 +159,6 @@ async function executeStep(page, step, onProgress, runtime = {}) {
         } else {
           await locator.click()
         }
-        await page.waitForTimeout(400) // settle time for post-click animations
         break
       }
       case 'type': {
@@ -124,7 +175,6 @@ async function executeStep(page, step, onProgress, runtime = {}) {
             })
             await pulseShowcaseCursor(page, runtime.cursor)
           }
-          await waitForStableLocator(locator, page, { timeoutMs: 900, stableMs: 100 })
           const targetPoint = await getLocatorInteractionPoint(locator)
           if (targetPoint) {
             await locator.click({
@@ -137,13 +187,13 @@ async function executeStep(page, step, onProgress, runtime = {}) {
             await locator.click()
           }
         }
-        if (parseInt(step.delay, 10) > 0) {
-          await locator.fill('')
-          await locator.type(step.text || '', {
-            delay: parseInt(step.delay, 10),
-          })
-        } else {
-          await locator.fill(step.text || '')
+        await locator.fill('')
+        const _text = step.text || ''
+        const _delay = parseInt(step.delay, 10) || 300
+        const _charBreak = 100
+        for (const char of _text) {
+          await page.keyboard.type(char)
+          await page.waitForTimeout(_delay + _charBreak)
         }
         break
       }
